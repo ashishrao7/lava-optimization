@@ -130,10 +130,10 @@ class TestModelsFloatingPoint(unittest.TestCase):
         in_spike_process = InSpikeSetProcess(
             in_shape=input_spike.shape, spike_in=input_spike
         )
-        out_spike_process = OutProbeProcess(out_shape=process.a_out.shape)
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
 
-        in_spike_process.a_out.connect(process.s_in)
-        process.a_out.connect(out_spike_process.s_in)
+        in_spike_process.a_out.connect(process.a_in)
+        process.s_out.connect(out_spike_process.s_in)
 
         in_spike_process.run(
             condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
@@ -172,16 +172,16 @@ class TestModelsFloatingPoint(unittest.TestCase):
             in_shape=input_spike_qc.shape, spike_in=input_spike_qc
         )
         out_spike_cc_process = OutProbeProcess(
-            out_shape=process.a_out_cc.shape
+            out_shape=process.s_out_cc.shape
         )
         out_spike_qc_process = OutProbeProcess(
-            out_shape=process.a_out_qc.shape
+            out_shape=process.s_out_qc.shape
         )
 
-        in_spike_cn_process.a_out.connect(process.s_in_cn)
-        in_spike_qc_process.a_out.connect(process.s_in_qc)
-        process.a_out_cc.connect(out_spike_cc_process.s_in)
-        process.a_out_qc.connect(out_spike_qc_process.s_in)
+        in_spike_cn_process.a_out.connect(process.a_in_cn)
+        in_spike_qc_process.a_out.connect(process.a_in_qc)
+        process.s_out_cc.connect(out_spike_cc_process.s_in)
+        process.s_out_qc.connect(out_spike_qc_process.s_in)
 
         # testing for two timesteps because of design of
         # solution neurons for recurrent connectivity. Nth
@@ -270,10 +270,10 @@ class TestModelsFloatingPoint(unittest.TestCase):
         in_spike_process = InSpikeSetProcess(
             in_shape=input_spike.shape, spike_in=input_spike
         )
-        out_spike_process = OutProbeProcess(out_shape=process.a_out.shape)
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
 
         in_spike_process.a_out.connect(process.s_in)
-        process.a_out.connect(out_spike_process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
 
         in_spike_process.run(
             condition=RunSteps(num_steps=1),
@@ -314,9 +314,9 @@ class TestModelsFloatingPoint(unittest.TestCase):
         in_spike_process = InSpikeSetProcess(
             in_shape=input_spike.shape, spike_in=input_spike
         )
-        out_spike_process = OutProbeProcess(out_shape=process.a_out.shape)
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
         in_spike_process.a_out.connect(process.s_in)
-        process.a_out.connect(out_spike_process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
 
         # testing for two timesteps because of design of
         # solution neurons for recurrent connectivity. Nth

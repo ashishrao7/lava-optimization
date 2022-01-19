@@ -42,15 +42,15 @@ class PyCDModel(PyLoihiProcessModel):
 @implements(proc=ConstraintNeurons, protocol=LoihiProtocol)
 @requires(CPU)
 class PyCNeuModel(PyLoihiProcessModel):
-    s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
-    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    a_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     thresholds: np.ndarray = LavaPyType(np.ndarray, np.float64)
 
     def run_spk(self):
-        s_in = self.s_in.recv()
+        a_in = self.a_in.recv()
         # process behavior: constraint violation check
-        a_out = (s_in - self.thresholds) * (s_in > self.thresholds)
-        self.a_out.send(a_out)
+        s_out = (a_in - self.thresholds) * (a_in > self.thresholds)
+        self.s_out.send(s_out)
 
 
 @implements(proc=QuadraticConnectivity, protocol=LoihiProtocol)
@@ -70,10 +70,10 @@ class PyQCModel(PyLoihiProcessModel):
 @implements(proc=SolutionNeurons, protocol=LoihiProtocol)
 @requires(CPU)
 class PySNModel(PyLoihiProcessModel):
-    s_in_qc: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
-    a_out_qc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
-    s_in_cn: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
-    a_out_cc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    a_in_qc: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out_qc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    a_in_cn: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out_cc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     qp_neuron_state: np.ndarray = LavaPyType(np.ndarray, np.float64)
     grad_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
     alpha: np.ndarray = LavaPyType(np.ndarray, np.float64)
@@ -84,12 +84,12 @@ class PySNModel(PyLoihiProcessModel):
     growth_counter: int = LavaPyType(int, np.int32)
 
     def run_spk(self):
-        a_out = self.qp_neuron_state
-        self.a_out_cc.send(a_out)
-        self.a_out_qc.send(a_out)
+        s_out = self.qp_neuron_state
+        self.s_out_cc.send(s_out)
+        self.s_out_qc.send(s_out)
 
-        s_in_qc = self.s_in_qc.recv()
-        s_in_cn = self.s_in_cn.recv()
+        a_in_qc = self.a_in_qc.recv()
+        a_in_cn = self.a_in_cn.recv()
 
         self.decay_counter += 1
         if self.decay_counter == self.alpha_decay_schedule:
@@ -105,7 +105,7 @@ class PySNModel(PyLoihiProcessModel):
 
         # process behavior: gradient update
         self.qp_neuron_state += (
-            -self.alpha * (s_in_qc + self.grad_bias) - self.beta * s_in_cn
+            -self.alpha * (a_in_qc + self.grad_bias) - self.beta * a_in_cn
         )
 
 
@@ -130,7 +130,7 @@ class SubCCModel(AbstractSubProcessModel):
     s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
     constraint_matrix: np.ndarray = LavaPyType(np.ndarray, np.float64)
     constraint_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
-    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
 
     def __init__(self, proc):
         """Builds sub Process structure of the Process."""
@@ -149,9 +149,9 @@ class SubCCModel(AbstractSubProcessModel):
         # connect subprocesses to obtain required process behavior
         proc.in_ports.s_in.connect(self.constraintDirections.in_ports.s_in)
         self.constraintDirections.out_ports.a_out.connect(
-            self.constraintNeurons.in_ports.s_in
+            self.constraintNeurons.in_ports.a_in
         )
-        self.constraintNeurons.out_ports.a_out.connect(proc.out_ports.a_out)
+        self.constraintNeurons.out_ports.s_out.connect(proc.out_ports.s_out)
 
         # alias process variables to subprocess variables
         proc.vars.constraint_matrix.alias(
@@ -176,7 +176,7 @@ class SubGDModel(AbstractSubProcessModel):
     beta: np.ndarray = LavaPyType(np.ndarray, np.float64)
     alpha_decay_schedule: int = LavaPyType(int, np.int32)
     beta_growth_schedule: int = LavaPyType(int, np.int32)
-    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
 
     def __init__(self, proc):
         """Builds sub Process structure of the Process."""
@@ -212,10 +212,10 @@ class SubGDModel(AbstractSubProcessModel):
 
         # connect subprocesses to obtain required process behavior
         proc.in_ports.s_in.connect(self.cN.in_ports.s_in)
-        self.cN.out_ports.a_out.connect(self.sN.in_ports.s_in_cn)
-        self.sN.out_ports.a_out_qc.connect(self.qC.in_ports.s_in)
-        self.qC.out_ports.a_out.connect(self.sN.in_ports.s_in_qc)
-        self.sN.out_ports.a_out_cc.connect(proc.out_ports.a_out)
+        self.cN.out_ports.a_out.connect(self.sN.in_ports.a_in_cn)
+        self.sN.out_ports.s_out_qc.connect(self.qC.in_ports.s_in)
+        self.qC.out_ports.a_out.connect(self.sN.in_ports.a_in_qc)
+        self.sN.out_ports.s_out_cc.connect(proc.out_ports.s_out)
 
         # alias process variables to subprocess variables
         proc.vars.hessian.alias(self.qC.vars.weights)

@@ -42,7 +42,7 @@ class ConstraintNeurons(AbstractProcess):
     port.
 
     Realizes the following abstract behavior:
-    a_out = (s_in - thresholds) * (s_in < thresholds)
+    s_out = (a_in - thresholds) * (a_in < thresholds)
 
     Intialize the constraintNeurons Process.
 
@@ -59,8 +59,8 @@ class ConstraintNeurons(AbstractProcess):
     def __init__(self, **kwargs: ty.Any):
         super().__init__(**kwargs)
         shape = kwargs.get("shape", (1, 1))
-        self.s_in = InPort(shape=(shape[0], 1))
-        self.a_out = OutPort(shape=(shape[0], 1))
+        self.a_in = InPort(shape=(shape[0], 1))
+        self.s_out = OutPort(shape=(shape[0], 1))
         self.thresholds = Var(shape=shape, init=kwargs.pop("thresholds", 0))
 
 
@@ -124,12 +124,12 @@ class SolutionNeurons(AbstractProcess):
         super().__init__(**kwargs)
         shape = kwargs.get("shape", (1, 1))
         # In/outPorts that come from/go to the quadratic connectivity process
-        self.s_in_qc = InPort(shape=(shape[0], 1))
-        self.a_out_qc = OutPort(shape=(shape[0], 1))
+        self.a_in_qc = InPort(shape=(shape[0], 1))
+        self.s_out_qc = OutPort(shape=(shape[0], 1))
         # In/outPorts that come from/go to the constraint normals process
-        self.s_in_cn = InPort(shape=(shape[0], 1))
+        self.a_in_cn = InPort(shape=(shape[0], 1))
         # OutPort for constraint checking
-        self.a_out_cc = OutPort(shape=(shape[0], 1))
+        self.s_out_cc = OutPort(shape=(shape[0], 1))
         self.qp_neuron_state = Var(
             shape=shape, init=kwargs.pop("qp_neurons_init", np.zeros(shape))
         )
@@ -211,7 +211,7 @@ class ConstraintCheck(AbstractProcess):
         self.constraint_bias = Var(
             shape=(shape[0], 1), init=kwargs.pop("constraint_bias", 0)
         )
-        self.a_out = OutPort(shape=(shape[0], 1))
+        self.s_out = OutPort(shape=(shape[0], 1))
 
 
 class GradientDynamics(AbstractProcess):
@@ -285,4 +285,4 @@ class GradientDynamics(AbstractProcess):
             shape=(1, 1), init=kwargs.pop("beta_growth_schedule", 10000)
         )
 
-        self.a_out = OutPort(shape=(shape_hess[0], 1))
+        self.s_out = OutPort(shape=(shape_hess[0], 1))

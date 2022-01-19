@@ -92,8 +92,8 @@ class QPSolver:
         )
 
         # core solver
-        GradDyn.a_out.connect(ConsCheck.s_in)
-        ConsCheck.a_out.connect(GradDyn.s_in)
+        GradDyn.s_out.connect(ConsCheck.s_in)
+        ConsCheck.s_out.connect(GradDyn.s_in)
 
         GradDyn.run(
             condition=RunSteps(num_steps=i_max),
