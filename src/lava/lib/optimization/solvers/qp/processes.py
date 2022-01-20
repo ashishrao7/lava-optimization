@@ -286,3 +286,96 @@ class GradientDynamics(AbstractProcess):
         )
 
         self.s_out = OutPort(shape=(shape_hess[0], 1))
+
+class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
+    """The neurons that evolve according to the projected gradient
+    dynamics specified in the PIPG algorithm.
+    Implements the abstract behaviour
+    
+
+    Intialize the ProjectedGradientNeuronsPIPGeq process.
+
+        Kwargs:
+        -------
+        shape : int tuple, optional
+            A tuple defining the shape of the qp neurons. Defaults to (1,1).
+        qp_neurons_init : 1-D np.array, optional
+            initial value of qp solution neurons
+        grad_bias : 1-D np.array, optional
+            The bias of the gradient of the QP. This is the value 'p' in the
+            QP definition.
+        alpha : 1-D np.array, optional
+            Defines the learning rate for gradient descent. Defaults to 1.
+        alpha_decay_schedule : int, optional
+            The number of iterations after which one right shift operation
+            takes place for alpha. Default intialization to a very high value
+            of 10000.
+    """
+
+    def __init__(self, **kwargs: ty.Any):
+        super().__init__(**kwargs)
+        shape = kwargs.get("shape", (1, 1))
+        # In/outPorts that come from/go to the quadratic connectivity process
+        self.a_in_qc = InPort(shape=(shape[0], 1))
+        self.s_out_qc = OutPort(shape=(shape[0], 1))
+        # In/outPorts that come from/go to the constraint normals process
+        self.a_in_cn = InPort(shape=(shape[0], 1))
+        # OutPort for constraint directions
+        self.s_out_cd = OutPort(shape=(shape[0], 1))
+        self.qp_neuron_state = Var(
+            shape=shape, init=kwargs.pop("qp_neurons_init", np.zeros(shape))
+        )
+        self.grad_bias = Var(
+            shape=shape, init=kwargs.pop("grad_bias", np.zeros(shape))
+        )
+        self.alpha = Var(
+            shape=shape, init=kwargs.pop("alpha", np.ones((shape[0], 1)))
+        )
+        self.alpha_decay_schedule = Var(
+            shape=(1, 1), init=kwargs.pop("alpha_decay_schedule", 10000)
+        )
+        self.decay_counter = Var(shape=(1, 1), init=0)
+class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
+    """The neurons that evolve according to the proportional integral
+    dynamics specified in the PIPG algorithm.
+    Implements the abstract behaviour
+    
+
+    Intialize the ProportionalIntegralNeuronsPIPGeq process.
+
+        Kwargs:
+        -------
+        shape : int tuple, optional
+            A tuple defining the shape of the qp neurons. Defaults to (1,1).
+        constraint_neurons_init : 1-D np.array, optional
+            Initial value of constraint neurons
+        thresholds : 1-D np.array, optional
+            Define the thresholds of the neurons in the
+            constraint checking layer. This is usually 'k' in the constraints
+            of the QP. Default value of thresholds is 0.
+        beta : 1-D np.array, optional
+            Defines the learning rate for constraint-checking. Defaults to 1.
+        beta_growth_schedule : int, optional
+            The number of iterations after which one left shift operation takes
+            place for beta. Default intialization to a very high value of
+            10000.
+    """
+
+    def __init__(self, **kwargs: ty.Any):
+        super().__init__(**kwargs)
+        shape = kwargs.get("shape", (1, 1))
+        self.a_in  = InPort(shape=(shape[0], 1))
+        self.s_out = OutPort(shape=(shape[0], 1))
+        self.constraint_neuron_state = Var(
+            shape=shape, init=kwargs.pop("thresholds", np.zeros(shape))
+        )
+        self.constraint_bias = Var(
+            shape=shape, init=kwargs.pop("grad_bias", np.zeros(shape))
+        )
+        self.beta = Var(
+            shape=shape, init=kwargs.pop("beta", np.ones((shape[0], 1)))
+        )
+        self.beta_growth_schedule = Var(
+            shape=(1, 1), init=kwargs.pop("beta_growth_schedule", 10000)
+        )
+        self.growth_counter = Var(shape=(1, 1), init=0)
