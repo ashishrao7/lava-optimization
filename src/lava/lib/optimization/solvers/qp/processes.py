@@ -367,10 +367,10 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
         self.a_in  = InPort(shape=(shape[0], 1))
         self.s_out = OutPort(shape=(shape[0], 1))
         self.constraint_neuron_state = Var(
-            shape=shape, init=kwargs.pop("thresholds", np.zeros(shape))
+            shape=shape, init=kwargs.pop("constraint_neurons_init", np.zeros(shape))
         )
         self.constraint_bias = Var(
-            shape=shape, init=kwargs.pop("grad_bias", np.zeros(shape))
+            shape=shape, init=kwargs.pop("thresholds", np.zeros(shape))
         )
         self.beta = Var(
             shape=shape, init=kwargs.pop("beta", np.ones((shape[0], 1)))

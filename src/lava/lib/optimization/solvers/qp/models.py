@@ -22,6 +22,8 @@ from lava.lib.optimization.solvers.qp.processes import (
     QuadraticConnectivity,
     SolutionNeurons,
     GradientDynamics,
+    ProjectedGradientNeuronsPIPGeq,
+    ProportionalIntegralNeuronsPIPGeq,
 )
 
 
@@ -226,3 +228,62 @@ class SubGDModel(AbstractSubProcessModel):
         proc.vars.beta.alias(self.sN.vars.beta)
         proc.vars.alpha_decay_schedule.alias(self.sN.vars.alpha_decay_schedule)
         proc.vars.beta_growth_schedule.alias(self.sN.vars.beta_growth_schedule)
+
+
+@implements(proc=ProjectedGradientNeuronsPIPGeq, protocol=LoihiProtocol)
+@requires(CPU)
+class PySProjGradPIPGeqModel(PyLoihiProcessModel):
+    a_in_qc: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out_qc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    a_in_cn: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out_cd: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    qp_neuron_state: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    grad_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    alpha: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    alpha_decay_schedule: int = LavaPyType(int, np.int32)
+    decay_counter: int = LavaPyType(int, np.int32)
+
+    def run_spk(self):
+        s_out = self.qp_neuron_state
+        self.s_out_cd.send(s_out)
+        self.s_out_qc.send(s_out)
+
+        a_in_qc = self.a_in_qc.recv()
+        a_in_cn = self.a_in_cn.recv()
+
+        self.decay_counter += 1
+        if self.decay_counter == self.alpha_decay_schedule:
+            # TODO: guard against shift overflows in fixed-point
+            self.alpha = np.right_shift(self.alpha, 1)
+            self.decay_counter = np.zeros(self.decay_counter.shape)
+
+        # process behavior: gradient update
+        self.qp_neuron_state -= (
+            -self.alpha * (a_in_qc + self.grad_bias + a_in_cn) 
+        )
+
+@implements(proc=ProportionalIntegralNeuronsPIPGeq, protocol=LoihiProtocol)
+@requires(CPU)
+class PyPIneurPIPGeqModel(PyLoihiProcessModel):
+    a_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    constraint_neuron_state: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    constraint_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    beta: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    beta_growth_schedule: int = LavaPyType(int, np.int32)
+    growth_counter: int = LavaPyType(int, np.int32)
+
+    def run_spk(self):
+        a_in = self.a_in.recv()
+
+        self.growth_counter += 1
+        if self.growth_counter == self.beta_growth_schedule:
+            self.beta = np.left_shift(self.beta, 1)
+            # TODO: guard against shift overflows in fixed-point
+            self.growth_counter = np.zeros(self.growth_counter.shape)
+
+        # process behavior: 
+        omega = self.beta*(a_in - self.constraint_bias)
+        self.constraint_neuron_state += omega
+        gamma = self.constraint_neuron_state + omega
+        self.s_out.send(gamma)
