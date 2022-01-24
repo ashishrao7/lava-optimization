@@ -287,11 +287,12 @@ class GradientDynamics(AbstractProcess):
 
         self.s_out = OutPort(shape=(shape_hess[0], 1))
 
+
 class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
     """The neurons that evolve according to the projected gradient
     dynamics specified in the PIPG algorithm.
     Implements the abstract behaviour
-    
+
 
     Intialize the ProjectedGradientNeuronsPIPGeq process.
 
@@ -335,11 +336,13 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
             shape=(1, 1), init=kwargs.pop("alpha_decay_schedule", 10000)
         )
         self.decay_counter = Var(shape=(1, 1), init=0)
+
+
 class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
     """The neurons that evolve according to the proportional integral
     dynamics specified in the PIPG algorithm.
     Implements the abstract behaviour
-    
+
 
     Intialize the ProportionalIntegralNeuronsPIPGeq process.
 
@@ -364,10 +367,11 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
     def __init__(self, **kwargs: ty.Any):
         super().__init__(**kwargs)
         shape = kwargs.get("shape", (1, 1))
-        self.a_in  = InPort(shape=(shape[0], 1))
+        self.a_in = InPort(shape=(shape[0], 1))
         self.s_out = OutPort(shape=(shape[0], 1))
         self.constraint_neuron_state = Var(
-            shape=shape, init=kwargs.pop("constraint_neurons_init", np.zeros(shape))
+            shape=shape,
+            init=kwargs.pop("constraint_neurons_init", np.zeros(shape)),
         )
         self.constraint_bias = Var(
             shape=shape, init=kwargs.pop("thresholds", np.zeros(shape))

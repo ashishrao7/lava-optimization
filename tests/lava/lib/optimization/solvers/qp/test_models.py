@@ -25,6 +25,8 @@ from lava.lib.optimization.solvers.qp.models import (
     ConstraintDirections,
     QuadraticConnectivity,
     GradientDynamics,
+    ProjectedGradientNeuronsPIPGeq,
+    ProportionalIntegralNeuronsPIPGeq,
 )
 
 
@@ -338,6 +340,98 @@ class TestModelsFloatingPoint(unittest.TestCase):
             True,
         )
         in_spike_process.stop()
+
+    def test_model_projected_gradient_pipgeq_neurons(self):
+        """test behavior of neurons that perform projected gradient in pipgeq
+        process.
+        -alpha*(input_spike_1 + p)- beta*input_spike_2
+        """
+        init_sol = np.array([[2, 4, 6, 4, 1]]).T
+        p = np.array([[4, 3, 2, 1, 1]]).T
+        alpha, alpha_d = 3, 100
+        process = ProjectedGradientNeuronsPIPGeq(
+            shape=init_sol.shape,
+            qp_neurons_init=init_sol,
+            grad_bias=p,
+            alpha=alpha,
+            alpha_decay_schedule=alpha_d,
+        )
+        input_spike_cn = np.array([[1], [5], [2], [2], [0]])
+        input_spike_qc = np.array([[8], [2], [22], [21], [1]])
+        in_spike_cn_process = InSpikeSetProcess(
+            in_shape=input_spike_cn.shape, spike_in=input_spike_cn
+        )
+        in_spike_qc_process = InSpikeSetProcess(
+            in_shape=input_spike_qc.shape, spike_in=input_spike_qc
+        )
+        out_spike_cd_process = OutProbeProcess(
+            out_shape=process.s_out_cd.shape
+        )
+        out_spike_qc_process = OutProbeProcess(
+            out_shape=process.s_out_qc.shape
+        )
+
+        in_spike_cn_process.a_out.connect(process.a_in_cn)
+        in_spike_qc_process.a_out.connect(process.a_in_qc)
+        process.s_out_cd.connect(out_spike_cd_process.s_in)
+        process.s_out_qc.connect(out_spike_qc_process.s_in)
+
+        # testing for two timesteps because of design of
+        # solution neurons for recurrent connectivity. Nth
+        # state available only at N+1th timestep
+        in_spike_cn_process.run(
+            condition=RunSteps(num_steps=2), run_cfg=Loihi1SimCfg()
+        )
+        self.assertEqual(
+            np.all(
+                out_spike_cd_process.vars.spike_out.get()
+                == (init_sol - alpha * (input_spike_qc + p + input_spike_cn))
+            ),
+            True,
+        )
+        in_spike_cn_process.stop()
+
+    def test_model_proportional_integral_pipgeq_neurons(self):
+        """test behavior of proportional integral neurons process which are a
+        part of PIPG eq updates.
+        neuron_state =  neuron_state + beta*(input_spike - k)
+        a_out = neuron_state + beta*(input_spike - k)
+        """
+        init_sol = np.array([[2, 4, 6, 4, 1]]).T
+        p = np.array([[4, 3, 2, 1, 1]]).T
+        beta, beta_g = 2, 100
+        process = ProportionalIntegralNeuronsPIPGeq(
+            shape=init_sol.shape,
+            constraint_neurons_init=init_sol,
+            thresholds=p,
+            beta=beta,
+            beta_growth_schedule=beta_g,
+        )
+        input_spike = np.array([[1], [5], [2], [2], [0]])
+        in_spike_process = InSpikeSetProcess(
+            in_shape=input_spike.shape, spike_in=input_spike
+        )
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
+
+        in_spike_process.a_out.connect(process.a_in)
+        process.s_out.connect(out_spike_process.s_in)
+
+        in_spike_process.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        state_var = process.vars.constraint_neuron_state.get()
+        out_var = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+
+        self.assertEqual(
+            np.all(state_var == (init_sol + beta * (input_spike - p))),
+            True,
+        )
+
+        self.assertEqual(
+            np.all(out_var == (init_sol + 2 * beta * (input_spike - p))),
+            True,
+        )
 
 
 if __name__ == "__main__":

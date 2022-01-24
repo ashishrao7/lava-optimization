@@ -14,6 +14,8 @@ from lava.lib.optimization.solvers.qp.processes import (
     ConstraintDirections,
     QuadraticConnectivity,
     GradientDynamics,
+    ProjectedGradientNeuronsPIPGeq,
+    ProportionalIntegralNeuronsPIPGeq,
 )
 
 
@@ -169,6 +171,63 @@ class TestProcessesFloatingPoint(unittest.TestCase):
         )
         self.assertEqual(np.all(process.s_in.shape == (A_T.shape[1], 1)), True)
         self.assertEqual(np.all(process.s_out.shape == (P.shape[0], 1)), True)
+
+    def test_process_projected_gradient_pipgeq_neurons(self):
+        init_sol = np.array([[2, 4, 6, 4, 1]]).T
+        p = np.array([[4, 3, 2, 1, 1]]).T
+        alpha, alpha_d = 3, 100
+        process = ProjectedGradientNeuronsPIPGeq(
+            shape=init_sol.shape,
+            qp_neurons_init=init_sol,
+            grad_bias=p,
+            alpha=alpha,
+            alpha_decay_schedule=alpha_d,
+        )
+        self.assertEqual(
+            np.all(process.vars.qp_neuron_state.get() == init_sol), True
+        )
+        self.assertEqual(np.all(process.vars.grad_bias.get() == p), True)
+        self.assertEqual(np.all(process.vars.alpha.get() == alpha), True)
+        self.assertEqual(
+            process.vars.alpha_decay_schedule.get() == alpha_d, True
+        )
+        self.assertEqual(process.vars.decay_counter.get() == 0, True)
+        self.assertEqual(
+            np.all(process.a_in_qc.shape == (p.shape[0], 1)), True
+        )
+        self.assertEqual(
+            np.all(process.a_in_cn.shape == (p.shape[0], 1)), True
+        )
+        self.assertEqual(
+            np.all(process.s_out_qc.shape == (p.shape[0], 1)), True
+        )
+        self.assertEqual(
+            np.all(process.s_out_cd.shape == (p.shape[0], 1)), True
+        )
+
+    def test_process_proportional_integral_pipgeq_neurons(self):
+        init_sol = np.array([[2, 4, 6, 4, 1]]).T
+        p = np.array([[4, 3, 2, 1, 1]]).T
+        beta, beta_g = 2, 100
+        process = ProportionalIntegralNeuronsPIPGeq(
+            shape=init_sol.shape,
+            constraint_neurons_init=init_sol,
+            thresholds=p,
+            beta=beta,
+            beta_growth_schedule=beta_g,
+        )
+        self.assertEqual(
+            np.all(process.vars.constraint_neuron_state.get() == init_sol),
+            True,
+        )
+        self.assertEqual(np.all(process.vars.constraint_bias.get() == p), True)
+        self.assertEqual(np.all(process.vars.beta.get() == beta), True)
+        self.assertEqual(
+            process.vars.beta_growth_schedule.get() == beta_g, True
+        )
+        self.assertEqual(process.vars.growth_counter.get() == 0, True)
+        self.assertEqual(np.all(process.a_in.shape == (p.shape[0], 1)), True)
+        self.assertEqual(np.all(process.s_out.shape == (p.shape[0], 1)), True)
 
 
 if __name__ == "__main__":

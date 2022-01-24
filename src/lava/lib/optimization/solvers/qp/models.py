@@ -232,7 +232,7 @@ class SubGDModel(AbstractSubProcessModel):
 
 @implements(proc=ProjectedGradientNeuronsPIPGeq, protocol=LoihiProtocol)
 @requires(CPU)
-class PySProjGradPIPGeqModel(PyLoihiProcessModel):
+class PyProjGradPIPGeqModel(PyLoihiProcessModel):
     a_in_qc: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
     s_out_qc: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     a_in_cn: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
@@ -258,9 +258,10 @@ class PySProjGradPIPGeqModel(PyLoihiProcessModel):
             self.decay_counter = np.zeros(self.decay_counter.shape)
 
         # process behavior: gradient update
-        self.qp_neuron_state -= (
-            -self.alpha * (a_in_qc + self.grad_bias + a_in_cn) 
+        self.qp_neuron_state -= self.alpha * (
+            a_in_qc + self.grad_bias + a_in_cn
         )
+
 
 @implements(proc=ProportionalIntegralNeuronsPIPGeq, protocol=LoihiProtocol)
 @requires(CPU)
@@ -282,8 +283,8 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
             # TODO: guard against shift overflows in fixed-point
             self.growth_counter = np.zeros(self.growth_counter.shape)
 
-        # process behavior: 
-        omega = self.beta*(a_in - self.constraint_bias)
+        # process behavior:
+        omega = self.beta * (a_in - self.constraint_bias)
         self.constraint_neuron_state += omega
         gamma = self.constraint_neuron_state + omega
         self.s_out.send(gamma)
