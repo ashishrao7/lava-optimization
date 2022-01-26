@@ -243,6 +243,11 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
     alpha_decay_schedule: int = LavaPyType(int, np.int32)
     decay_counter: int = LavaPyType(int, np.int32)
 
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        self.lr_decay_type =  self.proc_params['lr_decay_type']
+        self.alpha_decay_indices = self.proc_params['alpha_decay_indices']
+
     def run_spk(self):
         s_out = self.qp_neuron_state
         self.s_out_cd.send(s_out)
@@ -250,13 +255,16 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
 
         a_in_qc = self.a_in_qc.recv()
         a_in_cn = self.a_in_cn.recv()
-
-        self.decay_counter += 1
-        if self.decay_counter == self.alpha_decay_schedule:
-            # TODO: guard against shift overflows in fixed-point
-            self.alpha = np.right_shift(self.alpha, 1)
-            self.decay_counter = np.zeros(self.decay_counter.shape)
-
+        if self.lr_decay_type=="schedule":
+            self.decay_counter += 1
+            if self.decay_counter == self.alpha_decay_schedule:
+                # TODO: guard against shift overflows in fixed-point
+                self.alpha = self.alpha/2
+                self.decay_counter = np.zeros(self.decay_counter.shape)
+        if self.lr_decay_type=="indices":
+            for index in self.alpa_decay_indices:
+                self.alpha = self.alpha/2
+            
         # process behavior: gradient update
         self.qp_neuron_state -= self.alpha * (
             a_in_qc + self.grad_bias + a_in_cn
@@ -274,14 +282,25 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
     beta_growth_schedule: int = LavaPyType(int, np.int32)
     growth_counter: int = LavaPyType(int, np.int32)
 
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        self.lr_growth_type =  self.proc_params['lr_growth_type']
+        self.beta_growth_indices = self.proc_params['beta_growth_indices']
+
+
     def run_spk(self):
         a_in = self.a_in.recv()
 
         self.growth_counter += 1
-        if self.growth_counter == self.beta_growth_schedule:
-            self.beta = np.left_shift(self.beta, 1)
-            # TODO: guard against shift overflows in fixed-point
-            self.growth_counter = np.zeros(self.growth_counter.shape)
+        if self.lr_growth_type=="schedule":
+            self.growth_counter += 1
+            if self.growth_counter == self.beta_growth_schedule:
+                # TODO: guard against shift overflows in fixed-point
+                self.beta = self.beta*2
+                self.growth_counter = np.zeros(self.growth_counter.shape)
+        if self.lr_growth_type=="indices":
+            for index in self.beta_growth_indices:
+                self.beta = self.beta*2
 
         # process behavior:
         omega = self.beta * (a_in - self.constraint_bias)
