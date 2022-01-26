@@ -6,6 +6,7 @@
 Implement behaviors (models) of the processes defined in processes.py
 For further documentation please refer to processes.py
 """
+from markupsafe import string
 import numpy as np
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 from lava.magma.core.model.py.ports import PyInPort, PyOutPort
@@ -242,6 +243,8 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
     alpha: np.ndarray = LavaPyType(np.ndarray, np.float64)
     alpha_decay_schedule: int = LavaPyType(int, np.int32)
     decay_counter: int = LavaPyType(int, np.int32)
+    alpha_decay_indices: int = LavaPyType(int, np.int32)
+    #lr_decay_type: string = LavaPyType(string, string)
 
     def run_spk(self):
         s_out = self.qp_neuron_state
@@ -250,13 +253,16 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
 
         a_in_qc = self.a_in_qc.recv()
         a_in_cn = self.a_in_cn.recv()
-
-        self.decay_counter += 1
-        if self.decay_counter == self.alpha_decay_schedule:
-            # TODO: guard against shift overflows in fixed-point
-            self.alpha = np.right_shift(self.alpha, 1)
-            self.decay_counter = np.zeros(self.decay_counter.shape)
-
+        # if self.lr_decay_type=="schedule":
+        #     self.decay_counter += 1
+        #     if self.decay_counter == self.alpha_decay_schedule:
+        #         # TODO: guard against shift overflows in fixed-point
+        #         self.alpha = self.alpha/2
+        #         self.decay_counter = np.zeros(self.decay_counter.shape)
+        # if self.lr_decay_type=="indices":
+        for index in self.alpa_decay_indices:
+            self.alpha = self.alpha/2
+        
         # process behavior: gradient update
         self.qp_neuron_state -= self.alpha * (
             a_in_qc + self.grad_bias + a_in_cn
@@ -273,15 +279,22 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
     beta: np.ndarray = LavaPyType(np.ndarray, np.float64)
     beta_growth_schedule: int = LavaPyType(int, np.int32)
     growth_counter: int = LavaPyType(int, np.int32)
+    beta_growth_indices: int = LavaPyType(int, np.int32)
+    lr_growth_type: string = LavaPyType(string, string)
 
     def run_spk(self):
         a_in = self.a_in.recv()
 
         self.growth_counter += 1
-        if self.growth_counter == self.beta_growth_schedule:
-            self.beta = np.left_shift(self.beta, 1)
-            # TODO: guard against shift overflows in fixed-point
-            self.growth_counter = np.zeros(self.growth_counter.shape)
+        if self.lr_growth_type=="schedule":
+            self.growth_counter += 1
+            if self.growth_counter == self.beta_growth_schedule:
+                # TODO: guard against shift overflows in fixed-point
+                self.beta = self.beta*2
+                self.growth_counter = np.zeros(self.growth_counter.shape)
+        if self.lr_growth_type=="indices":
+            for index in self.beta_growth_indices:
+                self.beta = self.beta*2
 
         # process behavior:
         omega = self.beta * (a_in - self.constraint_bias)
