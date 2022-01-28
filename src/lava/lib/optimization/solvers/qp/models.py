@@ -6,6 +6,7 @@
 Implement behaviors (models) of the processes defined in processes.py
 For further documentation please refer to processes.py
 """
+from re import A
 import numpy as np
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 from lava.magma.core.model.py.ports import PyInPort, PyOutPort
@@ -245,8 +246,8 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
 
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
-        self.lr_decay_type =  self.proc_params['lr_decay_type']
-        self.alpha_decay_indices = self.proc_params['alpha_decay_indices']
+        self.lr_decay_type = self.proc_params["lr_decay_type"]
+        self.alpha_decay_indices = self.proc_params["alpha_decay_indices"]
 
     def run_spk(self):
         s_out = self.qp_neuron_state
@@ -255,16 +256,17 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
 
         a_in_qc = self.a_in_qc.recv()
         a_in_cn = self.a_in_cn.recv()
-        if self.lr_decay_type=="schedule":
-            self.decay_counter += 1
+        print("QP Neuron 1 State : {}".format(self.qp_neuron_state[0]))
+        self.decay_counter += 1
+        if self.lr_decay_type == "schedule":
             if self.decay_counter == self.alpha_decay_schedule:
                 # TODO: guard against shift overflows in fixed-point
-                self.alpha = self.alpha/2
+                self.alpha = self.alpha / 2
                 self.decay_counter = np.zeros(self.decay_counter.shape)
-        if self.lr_decay_type=="indices":
-            for index in self.alpa_decay_indices:
-                self.alpha = self.alpha/2
-            
+        if self.lr_decay_type == "indices":
+            if self.decay_counter in self.alpha_decay_indices:
+                self.alpha = self.alpha / 2
+
         # process behavior: gradient update
         self.qp_neuron_state -= self.alpha * (
             a_in_qc + self.grad_bias + a_in_cn
@@ -284,23 +286,20 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
 
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
-        self.lr_growth_type =  self.proc_params['lr_growth_type']
-        self.beta_growth_indices = self.proc_params['beta_growth_indices']
-
+        self.lr_growth_type = self.proc_params["lr_growth_type"]
+        self.beta_growth_indices = self.proc_params["beta_growth_indices"]
 
     def run_spk(self):
         a_in = self.a_in.recv()
-
         self.growth_counter += 1
-        if self.lr_growth_type=="schedule":
-            self.growth_counter += 1
+        if self.lr_growth_type == "schedule":
             if self.growth_counter == self.beta_growth_schedule:
                 # TODO: guard against shift overflows in fixed-point
-                self.beta = self.beta*2
+                self.beta = self.beta * 2
                 self.growth_counter = np.zeros(self.growth_counter.shape)
-        if self.lr_growth_type=="indices":
-            for index in self.beta_growth_indices:
-                self.beta = self.beta*2
+        if self.lr_growth_type == "indices":
+            if self.growth_counter in self.beta_growth_indices:
+                self.beta = self.beta * 2
 
         # process behavior:
         omega = self.beta * (a_in - self.constraint_bias)

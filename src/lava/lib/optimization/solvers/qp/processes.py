@@ -291,10 +291,9 @@ class GradientDynamics(AbstractProcess):
 class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
     """The neurons that evolve according to the projected gradient
     dynamics specified in the PIPG algorithm.
-    Implements the abstract behaviour
-
-
     Intialize the ProjectedGradientNeuronsPIPGeq process.
+    Implements the abstract behaviour
+        qp_neuron_state -= alpha*(a_in_qc + grad_bias + a_in_cn)
 
         Kwargs:
         -------
@@ -310,12 +309,14 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
         lr_decay_type: string, optional
             Defines the nature of the learning rate, alpha's decay. "schedule"
             decays it for every alpha_decay_schedule timesteps. "indices" halves
-            the learning rate for every timestep defined in indices.
+            the learning rate for every timestep defined in alpha_decay_indices.
         alpha_decay_schedule : int, optional
             The number of iterations after which one right shift operation
             takes place for alpha. Default intialization to a very high value
             of 10000.
-        alpha_decay_indices: 
+        alpha_decay_indices: list, optional
+            The iteration numbers at which value of alpha gets halved
+            (right-shifted).
     """
 
     def __init__(self, **kwargs: ty.Any):
@@ -341,13 +342,20 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
             shape=(1, 1), init=kwargs.pop("alpha_decay_schedule", 10000)
         )
         self.decay_counter = Var(shape=(1, 1), init=0)
-        self.proc_params['alpha_decay_indices'] = kwargs.pop("alpha_decay_indices", [10000])
-        self.proc_params['lr_decay_type'] = kwargs.pop("lr_decay_type", "schedules")
+        self.proc_params["alpha_decay_indices"] = kwargs.pop(
+            "alpha_decay_indices", [10000]
+        )
+        self.proc_params["lr_decay_type"] = kwargs.pop(
+            "lr_decay_type", "schedules"
+        )
+
+
 class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
     """The neurons that evolve according to the proportional integral
     dynamics specified in the PIPG algorithm.
-    Implements the abstract behaviour
-
+    Implements the abstract behaviour.
+        constraint_neuron_state += beta * (a_in - constraint_bias)
+        s_out = constraint_neuron_state + beta * (a_in - constraint_bias)
 
     Intialize the ProportionalIntegralNeuronsPIPGeq process.
 
@@ -363,10 +371,17 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
             of the QP. Default value of thresholds is 0.
         beta : 1-D np.array, optional
             Defines the learning rate for constraint-checking. Defaults to 1.
+        lr_growth_type: string, optional
+            Defines the nature of the learning rate, beta's growth. "schedule"
+            grows it for every beta_growth_schedule timesteps. "indices" doubles
+            the learning rate for every timestep defined in beta_growth_indices.
         beta_growth_schedule : int, optional
             The number of iterations after which one left shift operation takes
             place for beta. Default intialization to a very high value of
             10000.
+        beta_growth_indices: list, optional
+            The iteration numbers at which value of beta gets doubled
+            (left-shifted).
     """
 
     def __init__(self, **kwargs: ty.Any):
@@ -388,5 +403,9 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
             shape=(1, 1), init=kwargs.pop("beta_growth_schedule", 10000)
         )
         self.growth_counter = Var(shape=(1, 1), init=0)
-        self.proc_params['beta_growth_indices'] = kwargs.pop("beta_growth_indices", [10000])
-        self.proc_params['lr_growth_type'] = kwargs.pop("lr_growth_type", "schedules")
+        self.proc_params["beta_growth_indices"] = kwargs.pop(
+            "beta_growth_indices", [10000]
+        )
+        self.proc_params["lr_growth_type"] = kwargs.pop(
+            "lr_growth_type", "schedules"
+        )
