@@ -31,10 +31,15 @@ class ConstraintDirections(AbstractProcess):
         shape = kwargs.get("shape", (1, 1))
         self.s_in = InPort(shape=(shape[1], 1))
         self.a_out = OutPort(shape=(shape[0], 1))
-        self.weights = Var(
-            shape=shape, init=kwargs.pop("constraint_directions", 0)
-        )
+        weights = kwargs.pop("constraint_directions", 0)
+        self.weights = Var(shape=shape, init=weights)
 
+        # Profiling
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+        col_sum_init = np.count_nonzero(weights, axis=0)
+        self.col_sum = Var(shape=col_sum_init.shape, init=col_sum_init)
 
 class ConstraintNeurons(AbstractProcess):
     """Process to check the violation of the linear constraints of the QP. A
@@ -409,3 +414,83 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
         self.proc_params["lr_growth_type"] = kwargs.pop(
             "lr_growth_type", "schedules"
         )
+
+class SigmaNeurons(AbstractProcess):
+    """Process to accumate spikes into a state variable before being fed to
+    another process.
+    Realizes the following abstract behavior:
+    a_out = self.x_internal + s_in
+        Kwargs:
+        ------
+        shape : int tuple, optional
+            Define the shape of the thresholds vector. Defaults to (1,1).
+        x_sig_init : 1-D np.array, optional
+            initial value of internal sigma neurons. Should be the same as 
+            qp_neurons_init. Default value is 0.
+    """
+
+    def __init__(self, **kwargs: ty.Any):
+        super().__init__(**kwargs)
+        shape = kwargs.get("shape", (1, 1))
+        self.s_in = InPort(shape=(shape[0], 1))
+        self.s_out = OutPort(shape=(shape[0], 1))
+        # should be same as x_int_
+        self.x_internal = Var(shape=shape, init=kwargs.pop("x_sig_init", 0))
+
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+
+class DeltaNeurons(AbstractProcess):
+    """Process to simulate Delta coding. A graded spike is sent only if the 
+    difference delta for a neuron exceeds the spiking threshold, Theta
+    Realizes the following abstract behavior:
+    delta = np.abs(s_in - self.x_internal)
+    s_out =  delta[delta > theta]  
+        Kwargs:
+        ------
+        shape : int tuple, optional
+            Define the shape of the thresholds vector. Defaults to (1,1).
+        x_del_init : 1-D np.array, optional
+            initial value of internal delta neurons. Should be the same as 
+            qp_neurons_init. Default value is 0.
+        theta : 1-D np.array, optional
+            Defines the learning rate for gradient descent. Defaults to 1.
+        theta_decay_type: string, optional
+            Defines the nature of the learning rate, theta's decay. "schedule"
+            decays it for every theta_decay_schedule timesteps. "indices" halves
+            the learning rate for every timestep defined in alpha_decay_indices.
+        theta_decay_schedule : int, optional
+            The number of iterations after which one right shift operation
+            takes place for theta. Default intialization to a very high value
+            of 10000.
+        theta_decay_indices: list, optional
+            The iteration numbers at which value of theta gets halved
+            (right-shifted).
+    """
+
+    def __init__(self, **kwargs: ty.Any):
+        super().__init__(**kwargs)
+        shape = kwargs.get("shape", (1, 1))
+        self.s_in = InPort(shape=(shape[0], 1))
+        self.s_out = OutPort(shape=(shape[0], 1))
+        self.x_internal = Var(shape=shape, init=kwargs.pop("x_del_init", 0))
+        self.theta = Var(
+            shape=shape, init=kwargs.pop("theta", np.ones((shape[0], 1)))
+        )
+        self.theta_decay_schedule = Var(
+            shape=(1, 1), init=kwargs.pop("theta_decay_schedule", 10000)
+        )
+        self.decay_counter = Var(shape=(1, 1), init=0)
+        self.proc_params["theta_decay_indices"] = kwargs.pop(
+            "theta_decay_indices", [10000]
+        )
+        self.proc_params["theta_decay_type"] = kwargs.pop(
+            "theta_decay_type", "schedules"
+        )
+        
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)

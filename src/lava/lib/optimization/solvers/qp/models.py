@@ -24,6 +24,7 @@ from lava.lib.optimization.solvers.qp.processes import (
     GradientDynamics,
     ProjectedGradientNeuronsPIPGeq,
     ProportionalIntegralNeuronsPIPGeq,
+    SigmaNeurons
 )
 
 
@@ -305,3 +306,25 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
         self.constraint_neuron_state += omega
         gamma = self.constraint_neuron_state + omega
         self.s_out.send(gamma)
+
+@implements(proc=SigmaNeurons, protocol=LoihiProtocol)
+@requires(CPU)
+class PySigNeurModel(PyLoihiProcessModel):
+    s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+    
+    def run_spk(self):
+        s_in = self.s_in.recv()
+        # process behavior: constraint violation check
+        self.x_internal += s_in
+        a_out = self.x_internal
+        # self.neurops += np.count_nonzero(s_in)
+        # self.spikeops += np.count_nonzero(a_out)
+        self.a_out.send(a_out)
+
