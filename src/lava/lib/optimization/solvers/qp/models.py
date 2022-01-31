@@ -35,8 +35,20 @@ class PyCDModel(PyLoihiProcessModel):
     a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, float)
     weights: np.ndarray = LavaPyType(np.ndarray, float)
 
+    # Profiling
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        # Precomputing column-wise sums for faster profiling
+        self.col_sum = np.count_nonzero(self.weights, axis=0)
+
     def run_spk(self):
         s_in = self.s_in.recv()
+        # Synops counter
+        self.synops += np.sum(self.col_sum[s_in.nonzero()[0]])
         # process behavior: matrix multiplication
         a_out = self.weights @ s_in
         self.a_out.send(a_out)
@@ -62,13 +74,24 @@ class PyQCModel(PyLoihiProcessModel):
     s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
     a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     weights: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    
+    # Profiling
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        # Precomputing column-wise sums for faster profiling
+        self.col_sum = np.count_nonzero(self.weights, axis=0)
 
     def run_spk(self):
         s_in = self.s_in.recv()
+        # Synops counter
+        self.synops += np.sum(self.col_sum[s_in.nonzero()[0]])
         # process behavior: matrix multiplication
         a_out = self.weights @ s_in
         self.a_out.send(a_out)
-
 
 @implements(proc=SolutionNeurons, protocol=LoihiProtocol)
 @requires(CPU)
@@ -119,8 +142,20 @@ class PyCNorModel(PyLoihiProcessModel):
     a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     weights: np.ndarray = LavaPyType(np.ndarray, np.float64)
 
+    # Profiling
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        # Precomputing column-wise sums for faster profiling
+        self.col_sum = np.count_nonzero(self.weights, axis=0)
+
     def run_spk(self):
         s_in = self.s_in.recv()
+        # Synops counter
+        self.synops += np.sum(self.col_sum[s_in.nonzero()[0]])
         # process behavior: matrix multiplication
         a_out = self.weights @ s_in
         self.a_out.send(a_out)
@@ -311,7 +346,7 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
 @requires(CPU)
 class PySigNeurModel(PyLoihiProcessModel):
     s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
-    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
     
     # Profiling Vars
@@ -321,10 +356,9 @@ class PySigNeurModel(PyLoihiProcessModel):
     
     def run_spk(self):
         s_in = self.s_in.recv()
-        # process behavior: constraint violation check
         self.x_internal += s_in
-        a_out = self.x_internal
+        s_out = self.x_internal
         # self.neurops += np.count_nonzero(s_in)
         # self.spikeops += np.count_nonzero(a_out)
-        self.a_out.send(a_out)
+        self.s_out.send(s_out)
 
