@@ -31,14 +31,18 @@ class ConstraintDirections(AbstractProcess):
         shape = kwargs.get("shape", (1, 1))
         self.s_in = InPort(shape=(shape[1], 1))
         self.a_out = OutPort(shape=(shape[0], 1))
-        self.weights = Var(
-            shape=shape, init=kwargs.pop("constraint_directions", 0)
-        )
-        
+        weights = kwargs.pop("constraint_directions", 0)
+        self.weights = Var(shape=shape, init=weights)
+
+        # Note that weights is of type nd.array and self.weights is a LavaPyType
+        # this can cause unexpected behavior while using numpy functions
+        self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
+
         # Profiling
         self.synops = Var(shape=(1, 1), init=0)
         self.neurops = Var(shape=(1, 1), init=0)
         self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class ConstraintNeurons(AbstractProcess):
     """Process to check the violation of the linear constraints of the QP. A
@@ -67,6 +71,11 @@ class ConstraintNeurons(AbstractProcess):
         self.s_out = OutPort(shape=(shape[0], 1))
         self.thresholds = Var(shape=shape, init=kwargs.pop("thresholds", 0))
 
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class QuadraticConnectivity(AbstractProcess):
     """The connections that define the Hessian of the quadratic cost function
@@ -90,12 +99,18 @@ class QuadraticConnectivity(AbstractProcess):
         shape = kwargs.get("shape", (1, 1))
         self.s_in = InPort(shape=(shape[1], 1))
         self.a_out = OutPort(shape=(shape[0], 1))
-        self.weights = Var(shape=shape, init=kwargs.pop("hessian", 0))
-     
+        weights = kwargs.pop("hessian", 0)
+        self.weights = Var(shape=shape, init=weights)
+
+        # Note that weights is of type nd.array and self.weights is a LavaPyType
+        # this can cause unexpected behavior while using numpy functions
+        self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
+
         # Profiling
         self.synops = Var(shape=(1, 1), init=0)
         self.neurops = Var(shape=(1, 1), init=0)
         self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class SolutionNeurons(AbstractProcess):
     """The neurons that evolve according to the constraint-corrected gradient
@@ -159,6 +174,11 @@ class SolutionNeurons(AbstractProcess):
         self.decay_counter = Var(shape=(1, 1), init=0)
         self.growth_counter = Var(shape=(1, 1), init=0)
 
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class ConstraintNormals(AbstractProcess):
     """Connections influencing the gradient dynamics when constraints are
@@ -184,14 +204,18 @@ class ConstraintNormals(AbstractProcess):
         shape = kwargs.get("shape", (1, 1))
         self.s_in = InPort(shape=(shape[1], 1))
         self.a_out = OutPort(shape=(shape[0], 1))
-        self.weights = Var(
-            shape=shape, init=kwargs.pop("constraint_normals", 0)
-        )
+        weights = kwargs.pop("constraint_normals", 0)
+        self.weights = Var(shape=shape, init=weights)
+
+        # Note that weights is of type nd.array and self.weights is a LavaPyType
+        # this can cause unexpected behavior while using numpy functions
+        self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
 
         # Profiling
         self.synops = Var(shape=(1, 1), init=0)
         self.neurops = Var(shape=(1, 1), init=0)
         self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class ConstraintCheck(AbstractProcess):
     """Check if linear constraints (equality/inequality) are violated for the
@@ -212,6 +236,10 @@ class ConstraintCheck(AbstractProcess):
         constraint_bias : 1-D np.array, optional
             The value of the constraint bias. This is 'k' in the linear
             constraints.
+        sparse: bool, optional
+            Sparse is true when using sparsifying neuron-model eg. sigma-delta
+        x_int_init : 1-D np.array, optional
+            initial value of internal sigma neurons
     """
 
     def __init__(self, **kwargs: ty.Any):
@@ -225,16 +253,22 @@ class ConstraintCheck(AbstractProcess):
         )
         self.s_out = OutPort(shape=(shape[0], 1))
 
+        # Profiling
+        self.cNeur_synops = Var(shape=(1, 1), init=0)
+        self.cNeur_neurops = Var(shape=(1, 1), init=0)
+        self.cNeur_spikeops = Var(shape=(1, 1), init=0)
+
+        self.cD_synops = Var(shape=(1, 1), init=0)
+        self.cD_neurops = Var(shape=(1, 1), init=0)
+        self.cD_spikeops = Var(shape=(1, 1), init=0)
+
 
 class GradientDynamics(AbstractProcess):
     """Perform gradient descent with constraint correction to converge at the
     solution of the QP.
-
     Implements Abstract behavior:
     -alpha*(Q@x_init + p)- beta*A_T@graded_constraint_spike
-
     Initialize gradientDynamics Process.
-
         Kwargs:
         ------
         hessian : 1-D  or 2-D np.array, optional
@@ -248,10 +282,25 @@ class GradientDynamics(AbstractProcess):
             definition.
         qp_neurons_init : 1-D np.array, optional
             Initial value of qp solution neurons
+        sparse: bool, optional
+            Sparse is true when using sparsifying neuron-model eg. sigma-delta
+        model: str, optional
+            "SigDel" for sigma delta neurons and "TLIF" for Ternary LIF neurons.
+            Defines the type of neuron to be used for sparse activity.
+        vth_lo : 1-D np.array, optional
+            Defines the lower threshold for TLIF spiking. Defaults to 10.
+        vth_hi : 1-D np.array, optional
+            Defines the upper threshold for TLIF spiking. Defaults to -10.
+        theta : 1-D np.array, optional
+            Defines the threshold for sigma-delta spiking. Defaults to 0.
         alpha : 1-D np.array, optional
             Define the learning rate for gradient descent. Defaults to 1.
         beta : 1-D np.array, optional
             Define the learning rate for constraint-checking. Defaults to 1.
+        theta_decay_schedule : int, optional
+            The number of iterations after which one right shift operation
+            takes place for theta. Default intialization to a very high value
+            of 10000.
         alpha_decay_schedule : int, optional
             The number of iterations after which one right shift operation
             takes place for alpha. Default intialization to a very high value
@@ -263,7 +312,6 @@ class GradientDynamics(AbstractProcess):
     """
 
     def __init__(self, **kwargs: ty.Any):
-        """ """
         super().__init__(**kwargs)
         hessian = kwargs.pop("hessian", 0)
         constraint_matrix_T = kwargs.pop("constraint_matrix_T", 0)
@@ -282,6 +330,16 @@ class GradientDynamics(AbstractProcess):
             shape=(shape_hess[0], 1),
             init=kwargs.pop("qp_neurons_init", np.zeros((shape_hess[0], 1))),
         )
+        self.vth_lo = Var(
+            shape=(shape_hess[0], 1), init=kwargs.pop("vth_lo", -10)
+        )
+        self.vth_hi = Var(
+            shape=(shape_hess[0], 1), init=kwargs.pop("vth_hi", 10)
+        )
+        self.theta = Var(
+            shape=(shape_hess[0], 1),
+            init=kwargs.pop("theta", np.zeros((shape_hess[0], 1))),
+        )
         self.alpha = Var(
             shape=(shape_hess[0], 1),
             init=kwargs.pop("alpha", np.ones((shape_hess[0], 1))),
@@ -289,6 +347,9 @@ class GradientDynamics(AbstractProcess):
         self.beta = Var(
             shape=(shape_hess[0], 1),
             init=kwargs.pop("beta", np.ones((shape_hess[0], 1))),
+        )
+        self.theta_decay_schedule = Var(
+            shape=(1, 1), init=kwargs.pop("theta_decay_schedule", 10000)
         )
         self.alpha_decay_schedule = Var(
             shape=(1, 1), init=kwargs.pop("alpha_decay_schedule", 10000)
@@ -298,6 +359,19 @@ class GradientDynamics(AbstractProcess):
         )
 
         self.s_out = OutPort(shape=(shape_hess[0], 1))
+
+        # Profiling
+        self.cN_synops = Var(shape=(1, 1), init=0)
+        self.cN_neurops = Var(shape=(1, 1), init=0)
+        self.cN_spikeops = Var(shape=(1, 1), init=0)
+
+        self.qC_synops = Var(shape=(1, 1), init=0)
+        self.qC_neurops = Var(shape=(1, 1), init=0)
+        self.qC_spikeops = Var(shape=(1, 1), init=0)
+
+        self.sN_synops = Var(shape=(1, 1), init=0)
+        self.sN_neurops = Var(shape=(1, 1), init=0)
+        self.sN_spikeops = Var(shape=(1, 1), init=0)
 
 
 class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
@@ -361,6 +435,11 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
             "lr_decay_type", "schedules"
         )
 
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+
 
 class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
     """The neurons that evolve according to the proportional integral
@@ -422,6 +501,12 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
             "lr_growth_type", "schedules"
         )
 
+        # Profiling Vars
+        self.synops = Var(shape=(1, 1), init=0)
+        self.neurops = Var(shape=(1, 1), init=0)
+        self.spikeops = Var(shape=(1, 1), init=0)
+
+
 class SigmaNeurons(AbstractProcess):
     """Process to accumate spikes into a state variable before being fed to
     another process.
@@ -432,7 +517,7 @@ class SigmaNeurons(AbstractProcess):
         shape : int tuple, optional
             Define the shape of the thresholds vector. Defaults to (1,1).
         x_sig_init : 1-D np.array, optional
-            initial value of internal sigma neurons. Should be the same as 
+            initial value of internal sigma neurons. Should be the same as
             qp_neurons_init. Default value is 0.
     """
 
@@ -449,18 +534,19 @@ class SigmaNeurons(AbstractProcess):
         self.neurops = Var(shape=(1, 1), init=0)
         self.spikeops = Var(shape=(1, 1), init=0)
 
+
 class DeltaNeurons(AbstractProcess):
-    """Process to simulate Delta coding. A graded spike is sent only if the 
+    """Process to simulate Delta coding. A graded spike is sent only if the
     difference delta for a neuron exceeds the spiking threshold, Theta
     Realizes the following abstract behavior:
     delta = np.abs(s_in - self.x_internal)
-    s_out =  delta[delta > theta]  
+    s_out =  delta[delta > theta]
         Kwargs:
         ------
         shape : int tuple, optional
             Define the shape of the thresholds vector. Defaults to (1,1).
         x_del_init : 1-D np.array, optional
-            initial value of internal delta neurons. Should be the same as 
+            initial value of internal delta neurons. Should be the same as
             qp_neurons_init. Default value is 0.
         theta : 1-D np.array, optional
             Defines the learning rate for gradient descent. Defaults to 1.
@@ -496,7 +582,7 @@ class DeltaNeurons(AbstractProcess):
         self.proc_params["theta_decay_type"] = kwargs.pop(
             "theta_decay_type", "schedules"
         )
-        
+
         # Profiling Vars
         self.synops = Var(shape=(1, 1), init=0)
         self.neurops = Var(shape=(1, 1), init=0)

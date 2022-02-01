@@ -113,14 +113,13 @@ class TestModelsFloatingPoint(unittest.TestCase):
         in_spike_process.run(
             condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
         )
+        var = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+
         self.assertEqual(
-            np.all(
-                out_spike_process.vars.spike_out.get()
-                == (weights @ input_spike)
-            ),
+            np.all(var == (weights @ input_spike)),
             True,
         )
-        in_spike_process.stop()
 
     def test_model_constraint_neurons(self):
         """test behavior of constraint directions process

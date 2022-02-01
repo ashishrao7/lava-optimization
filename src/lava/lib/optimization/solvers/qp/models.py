@@ -6,6 +6,7 @@
 Implement behaviors (models) of the processes defined in processes.py
 For further documentation please refer to processes.py
 """
+from ast import Del
 import numpy as np
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 from lava.magma.core.model.py.ports import PyInPort, PyOutPort
@@ -24,7 +25,8 @@ from lava.lib.optimization.solvers.qp.processes import (
     GradientDynamics,
     ProjectedGradientNeuronsPIPGeq,
     ProportionalIntegralNeuronsPIPGeq,
-    SigmaNeurons
+    SigmaNeurons,
+    DeltaNeurons,
 )
 
 
@@ -42,8 +44,7 @@ class PyCDModel(PyLoihiProcessModel):
 
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
-        # Precomputing column-wise sums for faster profiling
-        self.col_sum = np.count_nonzero(self.weights, axis=0)
+        self.col_sum = self.proc_params["col_sum"]
 
     def run_spk(self):
         s_in = self.s_in.recv()
@@ -61,20 +62,27 @@ class PyCNeuModel(PyLoihiProcessModel):
     s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     thresholds: np.ndarray = LavaPyType(np.ndarray, np.float64)
 
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
     def run_spk(self):
         a_in = self.a_in.recv()
         # process behavior: constraint violation check
         s_out = (a_in - self.thresholds) * (a_in > self.thresholds)
+        # Spikeops counter
+        self.spikeops += np.count_nonzero(s_out)
         self.s_out.send(s_out)
 
 
 @implements(proc=QuadraticConnectivity, protocol=LoihiProtocol)
 @requires(CPU)
 class PyQCModel(PyLoihiProcessModel):
-    s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
-    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
-    weights: np.ndarray = LavaPyType(np.ndarray, np.float64)
-    
+    s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, float)
+    a_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, float)
+    weights: np.ndarray = LavaPyType(np.ndarray, float)
+
     # Profiling
     synops: int = LavaPyType(int, np.int32)
     neurops: int = LavaPyType(int, np.int32)
@@ -82,8 +90,7 @@ class PyQCModel(PyLoihiProcessModel):
 
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
-        # Precomputing column-wise sums for faster profiling
-        self.col_sum = np.count_nonzero(self.weights, axis=0)
+        self.col_sum = self.proc_params["col_sum"]
 
     def run_spk(self):
         s_in = self.s_in.recv()
@@ -92,6 +99,7 @@ class PyQCModel(PyLoihiProcessModel):
         # process behavior: matrix multiplication
         a_out = self.weights @ s_in
         self.a_out.send(a_out)
+
 
 @implements(proc=SolutionNeurons, protocol=LoihiProtocol)
 @requires(CPU)
@@ -109,8 +117,15 @@ class PySNModel(PyLoihiProcessModel):
     decay_counter: int = LavaPyType(int, np.int32)
     growth_counter: int = LavaPyType(int, np.int32)
 
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
     def run_spk(self):
         s_out = self.qp_neuron_state
+        # Spikeops counter
+        self.spikeops += np.count_nonzero(s_out)
         self.s_out_cc.send(s_out)
         self.s_out_qc.send(s_out)
 
@@ -149,8 +164,7 @@ class PyCNorModel(PyLoihiProcessModel):
 
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
-        # Precomputing column-wise sums for faster profiling
-        self.col_sum = np.count_nonzero(self.weights, axis=0)
+        self.col_sum = self.proc_params["col_sum"]
 
     def run_spk(self):
         s_in = self.s_in.recv()
@@ -170,10 +184,22 @@ class SubCCModel(AbstractSubProcessModel):
     constraint_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
     s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
 
+    # profiling
+    cNeur_synops: int = LavaPyType(int, np.int32)
+    cNeur_neurops: int = LavaPyType(int, np.int32)
+    cNeur_spikeops: int = LavaPyType(int, np.int32)
+
+    cD_synops: int = LavaPyType(int, np.int32)
+    cD_neurops: int = LavaPyType(int, np.int32)
+    cD_spikeops: int = LavaPyType(int, np.int32)
+
     def __init__(self, proc):
         """Builds sub Process structure of the Process."""
         constraint_matrix = proc.init_args.get("constraint_matrix", 0)
         constraint_bias = proc.init_args.get("constraint_bias", 0)
+
+        x_int_init = proc.init_args.get("x_int_init", 0)
+        sparse = proc.init_args.get("sparse", False)
 
         # Initialize subprocesses
         self.constraintDirections = ConstraintDirections(
@@ -184,8 +210,23 @@ class SubCCModel(AbstractSubProcessModel):
             shape=constraint_bias.shape, thresholds=constraint_bias
         )
 
-        # connect subprocesses to obtain required process behavior
-        proc.in_ports.s_in.connect(self.constraintDirections.in_ports.s_in)
+        if sparse:
+            print("[INFO]: Using additional Sigma layer")
+            self.sigmaNeurons = SigmaNeurons(
+                shape=(constraint_matrix.shape[1], 1), x_int_init=x_int_init
+            )
+
+            proc.vars.x_internal.alias(self.sigmaNeurons.vars.x_internal)
+            # connect subprocesses to obtain required process behavior
+            proc.in_ports.s_in.connect(self.sigmaNeurons.in_ports.s_in)
+            self.sigmaNeurons.out_ports.s_out.connect(
+                self.constraintDirections.in_ports.s_in
+            )
+
+        else:
+            proc.in_ports.s_in.connect(self.constraintDirections.in_ports.s_in)
+
+        # remaining procesess to connect irrespective of sparsity
         self.constraintDirections.out_ports.a_out.connect(
             self.constraintNeurons.in_ports.a_in
         )
@@ -196,6 +237,14 @@ class SubCCModel(AbstractSubProcessModel):
             self.constraintDirections.vars.weights
         )
         proc.vars.constraint_bias.alias(self.constraintNeurons.vars.thresholds)
+
+        # profiling
+        proc.vars.cNeur_synops.alias(self.constraintNeurons.vars.synops)
+        proc.vars.cNeur_neurops.alias(self.constraintNeurons.vars.neurops)
+        proc.vars.cNeur_spikeops.alias(self.constraintNeurons.vars.spikeops)
+        proc.vars.cD_synops.alias(self.constraintDirections.vars.synops)
+        proc.vars.cD_neurops.alias(self.constraintDirections.vars.neurops)
+        proc.vars.cD_spikeops.alias(self.constraintDirections.vars.spikeops)
 
 
 @implements(proc=GradientDynamics, protocol=LoihiProtocol)
@@ -216,6 +265,19 @@ class SubGDModel(AbstractSubProcessModel):
     beta_growth_schedule: int = LavaPyType(int, np.int32)
     s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
 
+    # profiling
+    cN_synops: int = LavaPyType(int, np.int32)
+    cN_neurops: int = LavaPyType(int, np.int32)
+    cN_spikeops: int = LavaPyType(int, np.int32)
+
+    qC_synops: int = LavaPyType(int, np.int32)
+    qC_neurops: int = LavaPyType(int, np.int32)
+    qC_spikeops: int = LavaPyType(int, np.int32)
+
+    sN_synops: int = LavaPyType(int, np.int32)
+    sN_neurops: int = LavaPyType(int, np.int32)
+    sN_spikeops: int = LavaPyType(int, np.int32)
+
     def __init__(self, proc):
         """Builds sub Process structure of the Process."""
         hessian = proc.init_args.get("hessian", 0)
@@ -227,33 +289,91 @@ class SubGDModel(AbstractSubProcessModel):
         qp_neuron_i = proc.init_args.get(
             "qp_neurons_init", np.zeros(shape_sol)
         )
+        sparse = proc.init_args.get("sparse", False)
+        model = proc.init_args.get("model", "SigDel")
+        theta = proc.init_args.get("theta", np.zeros(shape_sol))
+        vth_lo = proc.init_args.get("vth_lo", -10)
+        vth_hi = proc.init_args.get("vth_hi", 10)
         alpha = proc.init_args.get("alpha", np.ones(shape_sol))
         beta = proc.init_args.get("beta", np.ones(shape_sol))
-        a_d = proc.init_args.get("alpha_decay_schedule", 10000)
-        b_g = proc.init_args.get("beta_decay_schedule", 10000)
+        t_d = proc.init_args.get("theta_decay_schedule", 100000)
+        a_d = proc.init_args.get("alpha_decay_schedule", 100000)
+        b_g = proc.init_args.get("beta_decay_schedule", 100000)
 
         # Initialize subprocesses
         self.qC = QuadraticConnectivity(shape=shape_hess, hessian=hessian)
-        self.sN = SolutionNeurons(
-            shape=shape_sol,
-            qp_neurons_init=qp_neuron_i,
-            grad_bias=grad_bias,
-            alpha=alpha,
-            beta=beta,
-            alpha_decay_schedule=a_d,
-            beta_growth_schedule=b_g,
-        )
+
         self.cN = ConstraintNormals(
             shape=shape_constraint_matrix_T,
             constraint_normals=constraint_matrix_T,
         )
 
+        if sparse:
+            if model == "SigDel":
+                print("[INFO]: Using Sigma Delta Solution Neurons")
+                self.sN = SolutionNeurons(
+                    shape=shape_sol,
+                    qp_neurons_init=qp_neuron_i,
+                    grad_bias=grad_bias,
+                    alpha=alpha,
+                    beta=beta,
+                    alpha_decay_schedule=a_d,
+                    beta_growth_schedule=b_g,
+                )
+
+                self.sigmaNeurons = SigmaNeurons(
+                    shape=shape_sol, x_int_init=qp_neuron_i
+                )
+                proc.vars.x_internal_sigma.alias(
+                    self.sigmaNeurons.vars.x_internal
+                )
+
+                self.deltaNeurons = DeltaNeurons(
+                    shape=shape_sol,
+                    x_del_init=qp_neuron_i,
+                    theta=theta,
+                    theta_decay_schedule=t_d,
+                )
+                proc.vars.x_internal_delta.alias(
+                    self.deltaNeurons.vars.x_internal
+                )
+                proc.vars.theta.alias(self.deltaNeurons.vars.theta)
+                proc.vars.theta_decay_schedule.alias(
+                    self.deltaNeurons.vars.theta_decay_schedule
+                )
+
+                # connection processes and aliases
+                self.sN.out_ports.s_out_qc.connect(
+                    self.deltaNeurons.in_ports.s_in
+                )
+                self.deltaNeurons.out_ports.s_out.connect(
+                    self.sigmaNeurons.in_ports.s_in
+                )
+                self.deltaNeurons.out_ports.s_out.connect(proc.out_ports.s_out)
+                self.sigmaNeurons.out_ports.s_out.connect(
+                    self.qC.in_ports.s_in
+                )
+                proc.vars.sN_spikeops.alias(self.deltaNeurons.vars.spikeops)
+
+        else:
+            print("[INFO]: Using Dense Solution Neurons")
+            self.sN = SolutionNeurons(
+                shape=shape_sol,
+                qp_neurons_init=qp_neuron_i,
+                grad_bias=grad_bias,
+                alpha=alpha,
+                beta=beta,
+                alpha_decay_schedule=a_d,
+                beta_growth_schedule=b_g,
+            )
+            self.sN.out_ports.s_out_qc.connect(self.qC.in_ports.s_in)
+            self.sN.out_ports.s_out_cc.connect(proc.out_ports.s_out)
+            proc.vars.sN_spikeops.alias(self.sN.vars.spikeops)
+
         # connect subprocesses to obtain required process behavior
         proc.in_ports.s_in.connect(self.cN.in_ports.s_in)
         self.cN.out_ports.a_out.connect(self.sN.in_ports.a_in_cn)
-        self.sN.out_ports.s_out_qc.connect(self.qC.in_ports.s_in)
         self.qC.out_ports.a_out.connect(self.sN.in_ports.a_in_qc)
-        self.sN.out_ports.s_out_cc.connect(proc.out_ports.s_out)
 
         # alias process variables to subprocess variables
         proc.vars.hessian.alias(self.qC.vars.weights)
@@ -264,6 +384,18 @@ class SubGDModel(AbstractSubProcessModel):
         proc.vars.beta.alias(self.sN.vars.beta)
         proc.vars.alpha_decay_schedule.alias(self.sN.vars.alpha_decay_schedule)
         proc.vars.beta_growth_schedule.alias(self.sN.vars.beta_growth_schedule)
+
+        # profiling
+        proc.vars.cN_synops.alias(self.cN.vars.synops)
+        proc.vars.cN_neurops.alias(self.cN.vars.neurops)
+        proc.vars.cN_spikeops.alias(self.cN.vars.spikeops)
+
+        proc.vars.qC_synops.alias(self.qC.vars.synops)
+        proc.vars.qC_neurops.alias(self.qC.vars.neurops)
+        proc.vars.qC_spikeops.alias(self.qC.vars.spikeops)
+
+        proc.vars.sN_synops.alias(self.sN.vars.synops)
+        proc.vars.sN_neurops.alias(self.sN.vars.neurops)
 
 
 @implements(proc=ProjectedGradientNeuronsPIPGeq, protocol=LoihiProtocol)
@@ -279,6 +411,11 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
     alpha_decay_schedule: int = LavaPyType(int, np.int32)
     decay_counter: int = LavaPyType(int, np.int32)
 
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
         self.lr_decay_type = self.proc_params["lr_decay_type"]
@@ -286,12 +423,13 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
 
     def run_spk(self):
         s_out = self.qp_neuron_state
+        # Spikops counter
+        self.spikeops += np.count_nonzero(s_out)
         self.s_out_cd.send(s_out)
         self.s_out_qc.send(s_out)
 
         a_in_qc = self.a_in_qc.recv()
         a_in_cn = self.a_in_cn.recv()
-        print("QP Neuron 1 State : {}".format(self.qp_neuron_state[0]))
         self.decay_counter += 1
         if self.lr_decay_type == "schedule":
             if self.decay_counter == self.alpha_decay_schedule:
@@ -319,6 +457,11 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
     beta_growth_schedule: int = LavaPyType(int, np.int32)
     growth_counter: int = LavaPyType(int, np.int32)
 
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
     def __init__(self, proc_params: dict) -> None:
         super().__init__(proc_params)
         self.lr_growth_type = self.proc_params["lr_growth_type"]
@@ -340,7 +483,10 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
         omega = self.beta * (a_in - self.constraint_bias)
         self.constraint_neuron_state += omega
         gamma = self.constraint_neuron_state + omega
+        # Spikeops counter
+        self.spikeops += np.count_nonzero(gamma)
         self.s_out.send(gamma)
+
 
 @implements(proc=SigmaNeurons, protocol=LoihiProtocol)
 @requires(CPU)
@@ -348,17 +494,53 @@ class PySigNeurModel(PyLoihiProcessModel):
     s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
     s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
     x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
-    
+
     # Profiling Vars
     synops: int = LavaPyType(int, np.int32)
     neurops: int = LavaPyType(int, np.int32)
     spikeops: int = LavaPyType(int, np.int32)
-    
+
     def run_spk(self):
         s_in = self.s_in.recv()
         self.x_internal += s_in
         s_out = self.x_internal
-        # self.neurops += np.count_nonzero(s_in)
-        # self.spikeops += np.count_nonzero(a_out)
         self.s_out.send(s_out)
 
+
+@implements(proc=DeltaNeurons, protocol=LoihiProtocol)
+@requires(CPU)
+class PyDelNeurModel(PyLoihiProcessModel):
+    s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
+    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
+    x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    theta: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    theta_decay_schedule: int = LavaPyType(int, np.int32)
+    decay_counter: int = LavaPyType(int, np.int32)
+
+    # Profiling Vars
+    synops: int = LavaPyType(int, np.int32)
+    neurops: int = LavaPyType(int, np.int32)
+    spikeops: int = LavaPyType(int, np.int32)
+
+    def __init__(self, proc_params: dict) -> None:
+        super().__init__(proc_params)
+        self.theta_decay_type = self.proc_params["theta_decay_type"]
+        self.theta_decay_indices = self.proc_params["theta_decay_indices"]
+
+    def run_spk(self):
+        s_in = self.s_in.recv()
+        delta_state = s_in - self.x_internal
+        self.x_internal = s_in
+        self.decay_counter += 1
+        if self.theta_decay_type == "schedule":
+            if self.decay_counter == self.theta_decay_schedule:
+                # TODO: guard against shift overflows in fixed-point
+                self.theta = self.theta / 2
+                self.decay_counter = np.zeros(self.decay_counter.shape)
+        if self.theta_decay_type == "indices":
+            if self.decay_counter in self.theta_decay_indices:
+                self.theta = self.theta / 2
+        s_out = delta_state * (np.abs(delta_state) >= self.theta)
+        # Spikeops counter
+        self.spikeops += np.count_nonzero(s_out)
+        self.s_out.send(s_out)
