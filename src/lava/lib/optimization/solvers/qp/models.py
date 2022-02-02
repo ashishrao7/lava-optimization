@@ -6,7 +6,6 @@
 Implement behaviors (models) of the processes defined in processes.py
 For further documentation please refer to processes.py
 """
-from ast import Del
 import numpy as np
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 from lava.magma.core.model.py.ports import PyInPort, PyOutPort
@@ -48,7 +47,7 @@ class PyCDModel(PyLoihiProcessModel):
 
     def run_spk(self):
         s_in = self.s_in.recv()
-        # Synops counter
+        # Synops counter: TODO: add support for 1-D counting?
         self.synops += np.sum(self.col_sum[s_in.nonzero()[0]])
         # process behavior: matrix multiplication
         a_out = self.weights @ s_in
@@ -293,8 +292,8 @@ class SubGDModel(AbstractSubProcessModel):
         sparse = proc.init_args.get("sparse", False)
         model = proc.init_args.get("model", "SigDel")
         theta = proc.init_args.get("theta", np.zeros(shape_sol))
-        vth_lo = proc.init_args.get("vth_lo", -10)
-        vth_hi = proc.init_args.get("vth_hi", 10)
+        # vth_lo = proc.init_args.get("vth_lo", -10)
+        # vth_hi = proc.init_args.get("vth_hi", 10)
         alpha = proc.init_args.get("alpha", np.ones(shape_sol))
         beta = proc.init_args.get("beta", np.ones(shape_sol))
         t_d = proc.init_args.get("theta_decay_schedule", 100000)

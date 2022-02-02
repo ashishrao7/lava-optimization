@@ -34,8 +34,9 @@ class ConstraintDirections(AbstractProcess):
         weights = kwargs.pop("constraint_directions", 0)
         self.weights = Var(shape=shape, init=weights)
 
-        # Note that weights is of type nd.array and self.weights is a LavaPyType
-        # this can cause unexpected behavior while using numpy functions
+        # Note that weights is of type nd.array and self.weights is a
+        # LavaPyType. This can cause unexpected behavior while using
+        # numpy functions
         self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
 
         # Profiling
@@ -102,8 +103,9 @@ class QuadraticConnectivity(AbstractProcess):
         weights = kwargs.pop("hessian", 0)
         self.weights = Var(shape=shape, init=weights)
 
-        # Note that weights is of type nd.array and self.weights is a LavaPyType
-        # this can cause unexpected behavior while using numpy functions
+        # Note that weights is of type nd.array and self.weights is a
+        # LavaPyType. This can cause unexpected behavior while using
+        # numpy functions
         self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
 
         # Profiling
@@ -207,8 +209,9 @@ class ConstraintNormals(AbstractProcess):
         weights = kwargs.pop("constraint_normals", 0)
         self.weights = Var(shape=shape, init=weights)
 
-        # Note that weights is of type nd.array and self.weights is a LavaPyType
-        # this can cause unexpected behavior while using numpy functions
+        # Note that weights is of type nd.array and self.weights is a
+        # LavaPyType. This can cause unexpected behavior while using
+        # numpy functions
         self.proc_params["col_sum"] = np.count_nonzero(weights, axis=0)
 
         # Profiling
@@ -285,8 +288,8 @@ class GradientDynamics(AbstractProcess):
         sparse: bool, optional
             Sparse is true when using sparsifying neuron-model eg. sigma-delta
         model: str, optional
-            "SigDel" for sigma delta neurons and "TLIF" for Ternary LIF neurons.
-            Defines the type of neuron to be used for sparse activity.
+            "SigDel" for sigma delta neurons and "TLIF" for Ternary LIF
+            neurons. Defines the type of neuron to be used for sparse activity.
         vth_lo : 1-D np.array, optional
             Defines the lower threshold for TLIF spiking. Defaults to 10.
         vth_hi : 1-D np.array, optional
@@ -394,8 +397,9 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
             Defines the learning rate for gradient descent. Defaults to 1.
         lr_decay_type: string, optional
             Defines the nature of the learning rate, alpha's decay. "schedule"
-            decays it for every alpha_decay_schedule timesteps. "indices" halves
-            the learning rate for every timestep defined in alpha_decay_indices.
+            decays it for every alpha_decay_schedule timesteps. "indices"
+            halves the learning rate for every timestep defined in
+            alpha_decay_indices.
         alpha_decay_schedule : int, optional
             The number of iterations after which one right shift operation
             takes place for alpha. Default intialization to a very high value
@@ -464,8 +468,9 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
             Defines the learning rate for constraint-checking. Defaults to 1.
         lr_growth_type: string, optional
             Defines the nature of the learning rate, beta's growth. "schedule"
-            grows it for every beta_growth_schedule timesteps. "indices" doubles
-            the learning rate for every timestep defined in beta_growth_indices.
+            grows it for every beta_growth_schedule timesteps. "indices"
+            doubles the learning rate for every timestep defined in
+            beta_growth_indices.
         beta_growth_schedule : int, optional
             The number of iterations after which one left shift operation takes
             place for beta. Default intialization to a very high value of
@@ -552,8 +557,9 @@ class DeltaNeurons(AbstractProcess):
             Defines the learning rate for gradient descent. Defaults to 1.
         theta_decay_type: string, optional
             Defines the nature of the learning rate, theta's decay. "schedule"
-            decays it for every theta_decay_schedule timesteps. "indices" halves
-            the learning rate for every timestep defined in alpha_decay_indices.
+            decays it for every theta_decay_schedule timesteps.
+            "indices" halves the learning rate for every timestep defined
+            in alpha_decay_indices.
         theta_decay_schedule : int, optional
             The number of iterations after which one right shift operation
             takes place for theta. Default intialization to a very high value

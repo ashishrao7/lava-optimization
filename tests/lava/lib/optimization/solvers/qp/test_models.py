@@ -556,6 +556,10 @@ class TestModelsFloatingPoint(unittest.TestCase):
         self.assertEqual(np.all(val == (2 * input_spike + inp_bias)), True)
 
     def test_model_delta_neuron(self):
+        """
+        test behavior of delta (thresholded subractors) neuron process
+        (vector-vector subraction and thresholding)
+        """
         inp_bias = np.array([[2, 4, 6]]).T
         theta = 5
         process = DeltaNeurons(
@@ -583,7 +587,89 @@ class TestModelsFloatingPoint(unittest.TestCase):
         )
 
     def test_model_connection_synops_count(self):
-        pass
+        """test synops of connection processes
+        (Number of Synaptic operations in matrix-vector mulitplication)
+        """
+        # Problem
+        weights = np.array([[0, 3, 6], [0, 3, 0]])
+        input_spike_1 = np.array([[1], [2], [1]])
+        input_spike_2 = np.array([[0], [0], [0]])
+        input_spike_3 = np.array([[1], [0], [1]])
+        input_spike_4 = np.array([[0], [2], [0]])
+
+        # Answers
+        synops_1 = 3
+        synops_2 = 0
+        synops_3 = 1
+        synops_4 = 2
+
+        process_1 = ConstraintNormals(
+            shape=weights.shape, constraint_normals=weights
+        )
+        in_spike_process_1 = InSpikeSetProcess(
+            in_shape=input_spike_1.shape, spike_in=input_spike_1
+        )
+        in_spike_process_1.a_out.connect(process_1.s_in)
+        in_spike_process_1.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        var_1 = process_1.vars.synops.get()
+        in_spike_process_1.stop()
+
+        process_2 = QuadraticConnectivity(shape=weights.shape, hessian=weights)
+        in_spike_process_2 = InSpikeSetProcess(
+            in_shape=input_spike_2.shape, spike_in=input_spike_2
+        )
+
+        in_spike_process_2.a_out.connect(process_2.s_in)
+        in_spike_process_2.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        var_2 = process_2.vars.synops.get()
+        in_spike_process_2.stop()
+
+        process_3 = ConstraintDirections(
+            shape=weights.shape, constraint_directions=weights
+        )
+        in_spike_process_3 = InSpikeSetProcess(
+            in_shape=input_spike_3.shape, spike_in=input_spike_3
+        )
+        in_spike_process_3.a_out.connect(process_3.s_in)
+        in_spike_process_3.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        var_3 = process_3.vars.synops.get()
+        in_spike_process_3.stop()
+
+        process_4 = ConstraintNormals(
+            shape=weights.shape, constraint_normals=weights
+        )
+        in_spike_process_4 = InSpikeSetProcess(
+            in_shape=input_spike_4.shape, spike_in=input_spike_4
+        )
+        in_spike_process_4.a_out.connect(process_4.s_in)
+        in_spike_process_4.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        var_4 = process_4.vars.synops.get()
+        in_spike_process_4.stop()
+
+        self.assertEqual(
+            np.all(var_1 == synops_1),
+            True,
+        )
+        self.assertEqual(
+            np.all(var_2 == synops_2),
+            True,
+        )
+        self.assertEqual(
+            np.all(var_3 == synops_3),
+            True,
+        )
+        self.assertEqual(
+            np.all(var_4 == synops_4),
+            True,
+        )
 
     def test_model_lr_decays(self):
         pass
