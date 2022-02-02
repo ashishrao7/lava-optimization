@@ -27,6 +27,8 @@ from lava.lib.optimization.solvers.qp.models import (
     GradientDynamics,
     ProjectedGradientNeuronsPIPGeq,
     ProportionalIntegralNeuronsPIPGeq,
+    SigmaNeurons,
+    DeltaNeurons,
 )
 
 
@@ -289,6 +291,45 @@ class TestModelsFloatingPoint(unittest.TestCase):
         )
         in_spike_process.stop()
 
+    def test_sparse_model_constraint_check(self):
+        """Test behavior of sparsified constraint check process. Contains on
+        SigmaNeurons
+        """
+        A = np.array([[2, 3, 6], [43, 3, 2]])
+        k = np.array([[2, 4]]).T
+        x_init = np.array([[0.2, 0.4, 0.2]]).T
+        process = ConstraintCheck(
+            constraint_matrix=A,
+            constraint_bias=k,
+            sparse=True,
+            x_int_init=x_init,
+        )
+        input_spike = np.array([[1], [2], [1]])
+        in_spike_process = InSpikeSetProcess(
+            in_shape=input_spike.shape, spike_in=input_spike
+        )
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
+
+        in_spike_process.a_out.connect(process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
+
+        in_spike_process.run(
+            condition=RunSteps(num_steps=1),
+            run_cfg=Loihi1SimCfg(select_sub_proc_model=True),
+        )
+        val = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+        self.assertEqual(
+            np.all(
+                val
+                == (
+                    (A @ (input_spike + x_init) - k)
+                    * (A @ (input_spike + x_init) > k)
+                )
+            ),
+            True,
+        )
+
     def test_model_gradient_dynamics(self):
         """test behavior of GradientDynamics process
         -alpha*(Q@x_init + p)- beta*A_T@graded_constraint_spike
@@ -339,6 +380,64 @@ class TestModelsFloatingPoint(unittest.TestCase):
             True,
         )
         in_spike_process.stop()
+
+    def test_model_sparse_gradient_dynamics(self):
+        """test gradient dynamics with delta and sigma sparsifiers"""
+        Q = np.array([[2, 43.2, 2], [43, 3, 4], [2, 4, 1]])
+
+        A_T = np.array([[2, 3.3, 6], [43, 3, 2]]).T
+
+        init_sol = np.array([[2, 4, 6]]).T
+        p = np.array([[4, 3, 2]]).T
+        alpha, beta, alpha_d, beta_g = 3, 2, 100, 100
+        theta = 0.2
+        process = GradientDynamics(
+            hessian=Q,
+            constraint_matrix_T=A_T,
+            qp_neurons_init=init_sol,
+            sparse=True,
+            model="SigDel",
+            theta=theta,
+            grad_bias=p,
+            alpha=alpha,
+            beta=beta,
+            alpha_decay_schedule=alpha_d,
+            beta_growth_schedule=beta_g,
+        )
+
+        input_spike = np.array([[1], [2]])
+        in_spike_process = InSpikeSetProcess(
+            in_shape=input_spike.shape, spike_in=input_spike
+        )
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
+        in_spike_process.a_out.connect(process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
+
+        # testing for two timesteps because of design of
+        # solution neurons for recurrent connectivity. Nth
+        # state available only at N+1th timestep
+
+        in_spike_process.run(
+            condition=RunSteps(num_steps=2),
+            run_cfg=Loihi1SimCfg(select_sub_proc_model=True),
+        )
+        val = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+
+        prev_val = init_sol
+        curr_val = (
+            init_sol - alpha * (Q @ init_sol + p) - beta * A_T @ input_spike
+        )
+        self.assertEqual(
+            np.all(
+                val
+                == (
+                    (curr_val - prev_val)
+                    * (np.abs(curr_val - prev_val) > theta)
+                )
+            ),
+            True,
+        )
 
     def test_model_projected_gradient_pipgeq_neurons(self):
         """test behavior of neurons that perform projected gradient in pipgeq
@@ -431,6 +530,63 @@ class TestModelsFloatingPoint(unittest.TestCase):
             np.all(out_var == (init_sol + 2 * beta * (input_spike - p))),
             True,
         )
+
+    def test_model_sigma_neuron(self):
+        """test behavior of sigma (accumulator) neuron process
+        (vector-vector addition)
+        """
+        inp_bias = np.array([[2, 4, 6]]).T
+        process = SigmaNeurons(shape=inp_bias.shape, x_sig_init=inp_bias)
+        input_spike = np.array([[1], [5], [2]])
+        in_spike_process = InSpikeSetProcess(
+            in_shape=input_spike.shape, spike_in=input_spike
+        )
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
+
+        in_spike_process.a_out.connect(process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
+
+        in_spike_process.run(
+            condition=RunSteps(num_steps=2), run_cfg=Loihi1SimCfg()
+        )
+        val = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+
+        # testing accumulation operation
+        self.assertEqual(np.all(val == (2 * input_spike + inp_bias)), True)
+
+    def test_model_delta_neuron(self):
+        inp_bias = np.array([[2, 4, 6]]).T
+        theta = 5
+        process = DeltaNeurons(
+            shape=inp_bias.shape, x_del_init=inp_bias, theta=theta
+        )
+        input_spike = np.array([[1], [5], [2]])
+        in_spike_process = InSpikeSetProcess(
+            in_shape=input_spike.shape, spike_in=input_spike
+        )
+        out_spike_process = OutProbeProcess(out_shape=process.s_out.shape)
+
+        in_spike_process.a_out.connect(process.s_in)
+        process.s_out.connect(out_spike_process.s_in)
+
+        in_spike_process.run(
+            condition=RunSteps(num_steps=1), run_cfg=Loihi1SimCfg()
+        )
+        val = out_spike_process.vars.spike_out.get()
+        in_spike_process.stop()
+
+        # testing delta operation
+        delta_state = input_spike - inp_bias
+        self.assertEqual(
+            np.all(val == delta_state * (np.abs(delta_state) >= theta)), True
+        )
+
+    def test_model_connection_synops_count(self):
+        pass
+
+    def test_model_lr_decays(self):
+        pass
 
 
 if __name__ == "__main__":

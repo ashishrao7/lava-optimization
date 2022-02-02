@@ -182,6 +182,7 @@ class SubCCModel(AbstractSubProcessModel):
     s_in: PyInPort = LavaPyType(PyInPort.VEC_DENSE, np.float64)
     constraint_matrix: np.ndarray = LavaPyType(np.ndarray, np.float64)
     constraint_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
+    x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
     s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, np.float64)
 
     # profiling
@@ -213,10 +214,10 @@ class SubCCModel(AbstractSubProcessModel):
         if sparse:
             print("[INFO]: Using additional Sigma layer")
             self.sigmaNeurons = SigmaNeurons(
-                shape=(constraint_matrix.shape[1], 1), x_int_init=x_int_init
+                shape=(constraint_matrix.shape[1], 1), x_sig_init=x_int_init
             )
 
-            proc.vars.x_internal.alias(self.sigmaNeurons.vars.x_internal)
+            # proc.vars.x_internal.alias(self.sigmaNeurons.vars.x_internal)
             # connect subprocesses to obtain required process behavior
             proc.in_ports.s_in.connect(self.sigmaNeurons.in_ports.s_in)
             self.sigmaNeurons.out_ports.s_out.connect(
@@ -322,11 +323,11 @@ class SubGDModel(AbstractSubProcessModel):
                 )
 
                 self.sigmaNeurons = SigmaNeurons(
-                    shape=shape_sol, x_int_init=qp_neuron_i
+                    shape=shape_sol, x_sig_init=qp_neuron_i
                 )
-                proc.vars.x_internal_sigma.alias(
-                    self.sigmaNeurons.vars.x_internal
-                )
+                # proc.vars.x_internal_sigma.alias(
+                #     self.sigmaNeurons.vars.x_internal
+                # )
 
                 self.deltaNeurons = DeltaNeurons(
                     shape=shape_sol,
@@ -334,9 +335,9 @@ class SubGDModel(AbstractSubProcessModel):
                     theta=theta,
                     theta_decay_schedule=t_d,
                 )
-                proc.vars.x_internal_delta.alias(
-                    self.deltaNeurons.vars.x_internal
-                )
+                # proc.vars.x_internal_delta.alias(
+                #     self.deltaNeurons.vars.x_internal
+                # )
                 proc.vars.theta.alias(self.deltaNeurons.vars.theta)
                 proc.vars.theta_decay_schedule.alias(
                     self.deltaNeurons.vars.theta_decay_schedule
