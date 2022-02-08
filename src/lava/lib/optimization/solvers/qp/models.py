@@ -134,14 +134,14 @@ class PySNModel(PyLoihiProcessModel):
         self.decay_counter += 1
         if self.decay_counter == self.alpha_decay_schedule:
             # TODO: guard against shift overflows in fixed-point
-            self.alpha = np.right_shift(self.alpha, 1)
-            self.decay_counter = np.zeros(self.decay_counter.shape)
+            self.alpha = self.alpha/2
+            self.decay_counter = 0
 
         self.growth_counter += 1
         if self.growth_counter == self.beta_growth_schedule:
-            self.beta = np.left_shift(self.beta, 1)
+            self.beta = self.beta*2
             # TODO: guard against shift overflows in fixed-point
-            self.growth_counter = np.zeros(self.growth_counter.shape)
+            self.growth_counter = 0
 
         # process behavior: gradient update
         self.qp_neuron_state += (
@@ -409,7 +409,6 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
     grad_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
     alpha: np.ndarray = LavaPyType(np.ndarray, np.float64)
     alpha_decay_schedule: int = LavaPyType(int, np.int32)
-    decay_counter: int = LavaPyType(int, np.int32)
 
     # Profiling Vars
     synops: int = LavaPyType(int, np.int32)
@@ -420,6 +419,7 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
         super().__init__(proc_params)
         self.lr_decay_type = self.proc_params["lr_decay_type"]
         self.alpha_decay_indices = self.proc_params["alpha_decay_indices"]
+        self.decay_counter = 0
 
     def run_spk(self):
         s_out = self.qp_neuron_state
@@ -435,7 +435,7 @@ class PyProjGradPIPGeqModel(PyLoihiProcessModel):
             if self.decay_counter == self.alpha_decay_schedule:
                 # TODO: guard against shift overflows in fixed-point
                 self.alpha = self.alpha / 2
-                self.decay_counter = np.zeros(self.decay_counter.shape)
+                self.decay_counter = 0
         if self.lr_decay_type == "indices":
             if self.decay_counter in self.alpha_decay_indices:
                 self.alpha = self.alpha / 2
@@ -455,7 +455,6 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
     constraint_bias: np.ndarray = LavaPyType(np.ndarray, np.float64)
     beta: np.ndarray = LavaPyType(np.ndarray, np.float64)
     beta_growth_schedule: int = LavaPyType(int, np.int32)
-    growth_counter: int = LavaPyType(int, np.int32)
 
     # Profiling Vars
     synops: int = LavaPyType(int, np.int32)
@@ -466,6 +465,7 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
         super().__init__(proc_params)
         self.lr_growth_type = self.proc_params["lr_growth_type"]
         self.beta_growth_indices = self.proc_params["beta_growth_indices"]
+        self.growth_counter = 0
 
     def run_spk(self):
         a_in = self.a_in.recv()
@@ -474,7 +474,7 @@ class PyPIneurPIPGeqModel(PyLoihiProcessModel):
             if self.growth_counter == self.beta_growth_schedule:
                 # TODO: guard against shift overflows in fixed-point
                 self.beta = self.beta * 2
-                self.growth_counter = np.zeros(self.growth_counter.shape)
+                self.growth_counter = 0
         if self.lr_growth_type == "indices":
             if self.growth_counter in self.beta_growth_indices:
                 self.beta = self.beta * 2
@@ -515,7 +515,7 @@ class PyDelNeurModel(PyLoihiProcessModel):
     x_internal: np.ndarray = LavaPyType(np.ndarray, np.float64)
     theta: np.ndarray = LavaPyType(np.ndarray, np.float64)
     theta_decay_schedule: int = LavaPyType(int, np.int32)
-    decay_counter: int = LavaPyType(int, np.int32)
+    
 
     # Profiling Vars
     synops: int = LavaPyType(int, np.int32)
@@ -526,6 +526,7 @@ class PyDelNeurModel(PyLoihiProcessModel):
         super().__init__(proc_params)
         self.theta_decay_type = self.proc_params["theta_decay_type"]
         self.theta_decay_indices = self.proc_params["theta_decay_indices"]
+        self.decay_counter = 0
 
     def run_spk(self):
         s_in = self.s_in.recv()
@@ -536,11 +537,16 @@ class PyDelNeurModel(PyLoihiProcessModel):
             if self.decay_counter == self.theta_decay_schedule:
                 # TODO: guard against shift overflows in fixed-point
                 self.theta = self.theta / 2
-                self.decay_counter = np.zeros(self.decay_counter.shape)
+                print(self.theta[0])
+                self.decay_counter = 0
         if self.theta_decay_type == "indices":
             if self.decay_counter in self.theta_decay_indices:
                 self.theta = self.theta / 2
-        s_out = delta_state * (np.abs(delta_state) >= self.theta)
+
+        # IMP: Using x_internal below ensures sigma-delta behavior. 
+        # Additional sigma layer not required. Otherwise use self.delta would 
+        # lead to delta behavior only  
+        s_out = self.x_internal * (np.abs(delta_state) >= self.theta)
         # Spikeops counter
         self.spikeops += np.count_nonzero(s_out)
         self.s_out.send(s_out)

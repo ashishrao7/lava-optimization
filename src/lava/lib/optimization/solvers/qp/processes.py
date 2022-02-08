@@ -431,12 +431,11 @@ class ProjectedGradientNeuronsPIPGeq(AbstractProcess):
         self.alpha_decay_schedule = Var(
             shape=(1, 1), init=kwargs.pop("alpha_decay_schedule", 10000)
         )
-        self.decay_counter = Var(shape=(1, 1), init=0)
         self.proc_params["alpha_decay_indices"] = kwargs.pop(
             "alpha_decay_indices", [10000]
         )
         self.proc_params["lr_decay_type"] = kwargs.pop(
-            "lr_decay_type", "schedules"
+            "lr_decay_type", "schedule"
         )
 
         # Profiling Vars
@@ -498,12 +497,11 @@ class ProportionalIntegralNeuronsPIPGeq(AbstractProcess):
         self.beta_growth_schedule = Var(
             shape=(1, 1), init=kwargs.pop("beta_growth_schedule", 10000)
         )
-        self.growth_counter = Var(shape=(1, 1), init=0)
         self.proc_params["beta_growth_indices"] = kwargs.pop(
             "beta_growth_indices", [10000]
         )
         self.proc_params["lr_growth_type"] = kwargs.pop(
-            "lr_growth_type", "schedules"
+            "lr_growth_type", "schedule"
         )
 
         # Profiling Vars
@@ -581,12 +579,11 @@ class DeltaNeurons(AbstractProcess):
         self.theta_decay_schedule = Var(
             shape=(1, 1), init=kwargs.pop("theta_decay_schedule", 10000)
         )
-        self.decay_counter = Var(shape=(1, 1), init=0)
         self.proc_params["theta_decay_indices"] = kwargs.pop(
             "theta_decay_indices", [10000]
         )
         self.proc_params["theta_decay_type"] = kwargs.pop(
-            "theta_decay_type", "schedules"
+            "theta_decay_type", "schedule"
         )
 
         # Profiling Vars
