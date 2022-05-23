@@ -547,6 +547,8 @@ class PyDelNeurModel(PyLoihiProcessModel):
         # Additional sigma layer not required. Otherwise use self.delta would 
         # lead to delta behavior only  
         s_out = self.x_internal * (np.abs(delta_state) >= self.theta)
+        # for delta only behavior
+        # s_out = delta_state * (np.abs(delta_state) >= self.theta)
         # Spikeops counter
         self.spikeops += np.count_nonzero(s_out)
         self.s_out.send(s_out)
