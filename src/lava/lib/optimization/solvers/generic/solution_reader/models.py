@@ -15,15 +15,17 @@ from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 @implements(proc=SolutionReader, protocol=LoihiProtocol)
 class SolutionReaderModel(AbstractSubProcessModel):
     def __init__(self, proc):
-        var_shape = proc.proc_params.get("var_shape")
-        target_cost = proc.proc_params.get("target_cost")
+
+        target_costs = proc.proc_params.get("target_costs")
+        problem_index_map = proc.proc_params.get("problem_index_map")
         num_in_ports = proc.proc_params.get("num_in_ports")
+        var_shape = proc.proc_params.get("var_shape")
 
         self.read_gate = ReadGate(
-            shape=var_shape, target_cost=target_cost, num_in_ports=num_in_ports
+            shape=var_shape, problem_index_map=problem_index_map, target_costs=target_costs, num_in_ports=num_in_ports,
         )
         self.solution_readout = SolutionReadout(
-            shape=var_shape, target_cost=target_cost
+            shape=(,len(target_costs)), target_costs=target_costs, 
         )
         self.read_gate.cost_out.connect(self.solution_readout.cost_in)
         self.read_gate.solution_out.connect(self.solution_readout.read_solution)

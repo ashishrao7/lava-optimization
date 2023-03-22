@@ -19,17 +19,35 @@ from lava.magma.core.model.sub.model import AbstractSubProcessModel
 from lava.magma.core.resources import CPU
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 from lava.proc.dense.process import Dense
-
+from lava.lib.optimization.problems.variables import ContinuousVariables, \
+    DiscreteVariables
 
 @implements(proc=SolutionFinder, protocol=LoihiProtocol)
 @requires(CPU)
 class SolutionFinderModel(AbstractSubProcessModel):
     def __init__(self, proc):
-        cost_diagonal = proc.proc_params.get("cost_diagonal")
-        cost_coefficients = proc.proc_params.get("cost_coefficients")
+        problem = proc.problem
+        if not hasattr(problem, "variables"):
+            raise Exception(
+                "An optimization problem must contain " "variables."
+            )
+        if hasattr(problem.variables, "continuous") or isinstance(
+            problem.variables, ContinuousVariables
+        ):
+           continuous_var_shape=problem.variables.continuous.num_variables
+
+        if hasattr(problem.variables, "discrete") or isinstance(
+            problem.variables, DiscreteVariables
+        ):
+            discrete_var_shape=problem.variables.discrete.num_variables,
+            
+        self.cost_diagonal = None
+
+        if hasattr(problem, "cost"):
+            cost_coefficients = problem.cost.coefficients
+            cost_diagonal = problem.cost.coefficients[2].diagonal()
+
         hyperparameters = proc.proc_params.get("hyperparameters")
-        discrete_var_shape = proc.proc_params.get("discrete_var_shape")
-        continuous_var_shape = proc.proc_params.get("continuous_var_shape")
 
         # Subprocesses
         self.variables = VariablesImplementation()
@@ -90,6 +108,9 @@ class SolutionFinderModel(AbstractSubProcessModel):
         init_value = hyperparameters.get(
             "init_value", np.zeros(discrete_var_shape, dtype=int)
         )
-        q_off_diag = cost_coefficients[2].init
-        q_diag = cost_coefficients[1].init
+        
+        q_off_diag =  cost_coefficients[2] * np.logical_not(
+                np.eye(*cost_coefficients[2].shape)
+            )
+        q_diag = cost_coefficients[1]
         return q_off_diag @ init_value + q_diag

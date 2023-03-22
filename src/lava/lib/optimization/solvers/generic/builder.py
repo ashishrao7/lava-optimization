@@ -6,8 +6,6 @@ import typing as ty
 import numpy as np
 from lava.lib.optimization.problems.coefficients import CoefficientTensorsMixin
 from lava.lib.optimization.problems.problems import OptimizationProblem
-from lava.lib.optimization.problems.variables import ContinuousVariables, \
-    DiscreteVariables
 from lava.lib.optimization.solvers.generic.solution_finder.process import \
     SolutionFinder
 from lava.lib.optimization.solvers.generic.solution_reader.process import \
@@ -119,8 +117,8 @@ class SolverProcessBuilder:
 
     def _create_process_constructor(
         self,
-        problem: OptimizationProblem,
-        hyperparameters: ty.Dict[str, ty.Union[int, npt.ArrayLike]],
+        problems: ty.List[OptimizationProblem],
+        hyperparameters: ty.List[ty.Dict[str, ty.Union[int, npt.ArrayLike]]],
     ):
         """Create __init__ method for the OptimizationSolverProcess class.
 
@@ -149,95 +147,110 @@ class SolverProcessBuilder:
                 name=name,
                 log_config=log_config,
             )
-            self.problem = problem
+            self.problems = problems
             self.hyperparameters = hyperparameters
-            if not hasattr(problem, "variables"):
-                raise Exception(
-                    "An optimization problem must contain " "variables."
-                )
-            if hasattr(problem.variables, "continuous") or isinstance(
-                problem.variables, ContinuousVariables
-            ):
-                self.continuous_variables = Var(
-                    shape=(problem.variables.continuous.num_vars, 2)
-                )
-            if hasattr(problem.variables, "discrete") or isinstance(
-                problem.variables, DiscreteVariables
-            ):
-                self.discrete_variables = Var(
-                    shape=(
-                        problem.variables.num_variables,
-                        # problem.variables.domain_sizes[0]
-                    )
-                )
-            self.cost_diagonal = None
-            if hasattr(problem, "cost"):
-                mrcv = SolverProcessBuilder._map_rank_to_coefficients_vars
-                self.cost_coefficients = mrcv(problem.cost.coefficients)
-                self.cost_diagonal = problem.cost.coefficients[2].diagonal()
-            self.variable_assignment = Var(
-                shape=(problem.variables.num_variables,)
-            )
+            
             self.optimality = Var(shape=(1,))
             self.optimum = Var(shape=(2,))
             self.feasibility = Var(shape=(1,))
             self.solution_step = Var(shape=(1,))
+            # TODO: Verify if the variable below is used at all
             self.cost_monitor = Var(shape=(1,))
             self.finders = None
+            
+            # Only used when parallelization of Problems is 1. Used 
+            # For RefPort allocation.
+            if len(problems)==1: 
+                self.variable_assignment = Var(
+                    shape=(problems[0].variables.num_variables,)
+                )   
         self._process_constructor = constructor
 
-    def _create_model_constructor(self, target_cost: int):
+    def _calculate_num_in_ports_and_problem_index_map(self, hyperparameters, problems):
+        """calculate the number of inports required for the SolutionReader class
+        Also return a list containing the number of hyperparameters passed for
+        each problem.
+        Args:
+            hyperparameters: ty.List[ty.Dict[str, ty.Union[int, npt.ArrayLike]]]
+            problems: ty.List[OptimizationProblem]
+
+        Returns:
+            int: Number of in_ports required by the problem
+            list: A list containing number of problem instances that need to run 
+                for each problem passed into it.
+        """
+        # make test for this function in builder tests
+        if len(problems)==1:
+            return len(hyperparameters[0]), [len(hyperparameters[0])]
+        elif len(problems)!=len(hyperparameters):
+            raise ValueError("For problem level parallelization, the number of \
+                             hyperparameter sets should be equal to the number \
+                             of parallel problems to be solved.")
+        else:
+            problem_index_map = []
+            for hyperparameters_set in hyperparameters:
+                problem_index_map.append(sum(problem_index_map) + len(hyperparameters_set))
+            return sum(problem_index_map), problem_index_map
+        
+    def _get_var_shape(self, problems):
+        if len(problems==1):
+            return problems[0].variables.continuous.num_variables + problems[0].variables.discrete.num_variables
+        else:
+            max_var_length = 0
+            for problem in problems:
+                var_length = problem.variables.continuous.num_variables + problem.variables.discrete.num_variables
+                if var_length>max_var_length:
+                    max_var_length=var_length
+            return max_var_length
+        
+    def _create_model_constructor(self, target_costs: ty.List(int)):
         """Create __init__ method for the OptimizationSolverModel
         corresponding to the process in the building pipeline.
 
         Parameters
         ----------
         target_cost: int
-            A cost value provided by the user as a target for the solution to be
-            found by the solver, when a solution with such cost is found and
-            read, execution ends.
+            A cost value provided by the user as a target (targets in case of 
+            multiple problems) for the solution to be found by the solver, 
+            when a solution with such cost is found and read, execution ends.
         """
 
         def constructor(self, proc):
-            var_shape = proc.variable_assignment.shape
-            discrete_var_shape = None
-            if hasattr(proc, "discrete_variables"):
-                discrete_var_shape = proc.discrete_variables.shape
-            continuous_var_shape = None
-            if hasattr(proc, "continuous_variables"):
-                continuous_var_shape = proc.continuous_variables.shape
-            cost_diagonal = proc.cost_diagonal
-            cost_coefficients = proc.cost_coefficients
-            constraints = proc.problem.constraints
+            problems = proc.problems
+            var_shape = self._get_var_shape(proc.problems) 
+            # variables = proc.problems[0].variables if len(problems)==1 else self._get_max_variable_length(proc.problems)
             hyperparameters = proc.hyperparameters
+            
+            num_in_ports, problem_index_map = self._calculate_num_in_ports_and_problem_index_map(hyperparameters, 
+                                                        problems)
 
-            hps = (
-                hyperparameters
-                if isinstance(hyperparameters, list)
-                else [hyperparameters]
-            )
-
-            self.solution_reader = SolutionReader(
-                var_shape=discrete_var_shape,
-                target_cost=target_cost,
-                num_in_ports=len(hps),
-            )
             finders = []
-            for idx, hp in enumerate(hps):
-                finder = SolutionFinder(
-                    cost_diagonal=cost_diagonal,
-                    cost_coefficients=cost_coefficients,
-                    constraints=constraints,
-                    hyperparameters=hp,
-                    discrete_var_shape=discrete_var_shape,
-                    continuous_var_shape=continuous_var_shape,
-                )
-                setattr(self, f"finder_{idx}", finder)
-                finders.append(finder)
-                finder.cost_out.connect(
-                    getattr(self.solution_reader, f"read_gate_in_port_{idx}")
-                )
+            idx=0
+            for curr_prob in problems:
+                for hp in hyperparameters:
+                    finder = SolutionFinder(
+                        problem=curr_prob,
+                        hyperparameters=hp,
+                    )
+                    setattr(self, f"finder_{idx}", finder)
+                    finders.append(finder)
+                    finder.cost_out.connect(
+                        getattr(self.solution_reader, f"read_gate_in_port_{idx}")
+                    )
+                    idx+=1
             proc.finders = finders
+
+            # how do we manage solution readers for multiple problems
+            # what is min cost here?
+            # check if target costs != number of problems?
+            # pass finders to solution reader
+            self.solution_reader = SolutionReader(
+                target_costs=target_costs,
+                problem_index_map=problem_index_map,
+                num_in_ports=num_in_ports,
+                var_shape=var_shape,
+                finders=finders,
+            )
             # Variable aliasing
             if hasattr(proc, "cost_coefficients"):
                 proc.vars.optimum.alias(self.solution_reader.min_cost)

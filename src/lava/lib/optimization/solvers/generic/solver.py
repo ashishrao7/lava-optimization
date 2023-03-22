@@ -239,9 +239,16 @@ class OptimizationSolver:
             cost_timeseries=cost_timeseries,
         )
 
+    # TODO: Naming needs to be changed prepare and create are synonymous
+    # and can lead to confusion for a reader. Also perform method extraction if 
+    # possible 
     def _prepare_solver(self, config: SolverConfig):
         self._create_solver_process(config=config)
-        hps = config.hyperparameters
+        hps = (
+                config.hyperparameters
+                if isinstance(config.hyperparameters, list)
+                else [config.hyperparameters]
+            )
         num_in_ports = len(hps) if isinstance(hps, list) else 1
         if config.probe_cost:
             if config.backend in NEUROCORES:

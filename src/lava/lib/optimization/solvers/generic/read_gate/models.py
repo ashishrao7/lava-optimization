@@ -11,6 +11,10 @@ from lava.magma.core.model.py.type import LavaPyType
 from lava.magma.core.resources import CPU
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 
+def init_proc(self, proc):
+    super().__init__()
+    self.target_costs_list = proc.proc_params.get("target_costs")
+    self.problem_index_map = proc.proc_params.get("problem_index_map")
 
 def readgate_post_guard(self):
     """Decide whether to run post management phase."""
@@ -23,27 +27,44 @@ def readgate_run_spk(self):
     in_ports = [
         port for port in self.py_ports if issubclass(type(port), PyInPort)
     ]
+    min_prob_ids_and_cost = []
+    curr_prob_ind=0
+    port_num_start, port_num_end = 0, self.problem_index_map[curr_prob_ind]
     costs = []
-    for port in in_ports:
-        costs.append(port.recv()[0])
-    cost = min(costs)
-    id = costs.index(cost)
+    while port_num_start<port_num_end:
+        if port_num_start==(self.problem_index_map[curr_prob_ind]):
+            cost = min(costs)
+            # ids of inports having min_cost according to the 
+            # variable number of hyperparameters passed
+            min_prob_ids_and_cost.append((port_num_start+costs.index(cost), cost))
+            curr_prob_ind+=1
+            costs = []
+            if curr_prob_ind==len(self.problem_index_map):
+                break
+            else:
+                port_num_start =  port_num_end
+                port_num_end = self.problem_index_map[curr_prob_ind]
+                continue
+        costs.append(in_ports[port_num_start].recv()[0])
+        port_num_start+=1
 
-    if self.solution is not None:
-        timestep = -np.array([self.time_step])
-        if self.min_cost <= self.target_cost:
-            self._req_pause = True
-        self.cost_out.send(np.array([self.min_cost, self.min_cost_id]))
-        self.send_pause_request.send(timestep)
-        self.solution_out.send(self.solution)
-        self.solution = None
-        self.min_cost = None
-        self.min_cost_id = None
-    else:
-        self.cost_out.send(np.array([0, 0]))
-    if cost:
-        self.min_cost = cost
-        self.min_cost_id = id
+    # lengths of target costs and min_prob_ids should be the same
+    for prob_num, target_cost in enumerate(self.target_costs_list):
+        if self.solution is not None:
+            timestep = -np.array([self.time_step])
+            if self.min_cost <= target_cost:
+                self._req_pause = True
+            self.cost_out.send(np.array([min_prob_ids_and_cost[prob_num][1], self.min_prob_ids_and_cost[prob_num][0]]))
+            self.send_pause_request.send(timestep)
+            self.solution_out.send(self.solution)
+            self.solution = None
+            self.min_cost = None
+            self.min_cost_id = None
+        else:
+            self.cost_out.send(np.array([0, 0]))
+        if cost:
+            self.min_cost_id = min_prob_ids_and_cost[prob_num][0]
+            self.min_cost = min_prob_ids_and_cost[prob_num][1]
 
 
 def readgate_run_post_mgmt(self):
@@ -74,6 +95,7 @@ def get_readgate_members(num_in_ports):
         "min_cost_id": None,
         "solution": None,
         "post_guard": readgate_post_guard,
+        "__init__": init_proc,
         "run_spk": readgate_run_spk,
         "run_post_mgmt": readgate_run_post_mgmt,
     }
@@ -103,10 +125,11 @@ def get_read_gate_model_class(num_in_ports: int):
 
 ReadGatePyModel = get_read_gate_model_class(num_in_ports=1)
 
-
+# probably new ReadGate model with multiple cost_in ports coming 
+# in has to be written? Using multiple inports for cost will be slow no?
 @implements(ReadGate, protocol=LoihiProtocol)
 @requires(CPU)
-class ReadGatePyModelD(PyLoihiProcessModel):
+class ReadGatePyModelDummy(PyLoihiProcessModel):
     """CPU model for the ReadGate process.
 
     The model verifies if better payload (cost) has been notified by the

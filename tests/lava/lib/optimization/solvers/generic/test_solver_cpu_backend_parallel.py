@@ -12,7 +12,7 @@ from lava.lib.optimization.solvers.generic.solver import (
 
 
 class TestParallelOptimizationSolver(unittest.TestCase):
-    def test_parallel_run(self):
+    def test_parallel_hyperparams_run(self):
         q = np.array(
             [[-5, 2, 4, 0], [2, -3, 1, 0], [4, 1, -8, 5], [0, 0, 5, -6]]
         )
@@ -42,6 +42,42 @@ class TestParallelOptimizationSolver(unittest.TestCase):
         print(report)
         self.assertEqual(report.best_cost, solution_cost)
 
+    def test_parallel_problems_run(self):
+        # pass multiple qubo problem matrices as list to the solver
+        qs = [np.array([[-5, 2, 4, 0], 
+                      [2, -3, 1, 0], 
+                      [4, 1, -8, 5], 
+                      [0, 0, 5, -6]]),
+              np.array([[-3,-7, 2], 
+                        [1, -3, 9], 
+                        [1, 0, -2]])
+             ]
+        problems = [QUBO(q_i) for q_i in qs]
+        solver = OptimizationSolver(problem=problems)
+
+        np.random.seed(2)
+
+        config = SolverConfig(
+            timeout=50,
+            target_cost=-11,
+            backend="CPU",
+            hyperparameters=
+            {"neuron_model": "scif",
+             "noise_amplitude": 3,
+             "noise_precision": 5,
+             "sustained_on_tau": -3,
+             "neuron_model": "nebm"},
+        )
+        report = solver.solve(config=config)
+        print(report)
+
+        # assert for all problems in the list of solution costs
+        # solution = np.asarray([1, 0, 0, 1]).astype(int)
+        # solution_costs = [solution @ q_i @ solution for q_i in q]
+        # self.assertEqual(report.best_cost, solution_cost)
+
+    def test_parallel_problems_and_hyperparams_run(self):
+        pass
 
 def solve_workload(
     q, reference_solution, noise_precision=5, noise_amplitude=1, on_tau=-3

@@ -11,7 +11,7 @@ from lava.magma.core.model.py.type import LavaPyType
 from lava.magma.core.resources import CPU
 from lava.magma.core.sync.protocols.loihi_protocol import LoihiProtocol
 
-
+# what is the exact function of min_cost and target_cost?
 @implements(SolutionReadout, protocol=LoihiProtocol)
 @requires(CPU)
 class SolutionReadoutPyModel(PyLoihiProcessModel):
@@ -40,28 +40,36 @@ class SolutionReadoutPyModel(PyLoihiProcessModel):
     def run_spk(self):
         if self.stop:
             return
-        raw_cost, min_cost_id = self.cost_in.recv()
-        if raw_cost != 0:
-            timestep = self.timestep_in.recv()[0]
-            # The following casts cost as a signed 24-bit value (8 = 32 - 24)
-            cost = (np.array([raw_cost]).astype(np.int32) << 8) >> 8
-            raw_solution = self.read_solution.recv()
-            raw_solution &= 0x1F  # AND with 0x1F (=0b11111) retains 5 LSBs
-            # The binary solution was attained 2 steps ago. Shift down by 4.
-            self.solution[:] = raw_solution.astype(np.int8) >> 4
-            self.solution_step = abs(timestep)
-            self.min_cost[:] = np.asarray([cost[0], min_cost_id])
-            if cost[0] < 0:
-                print(
-                    f"Host: better solution found by network {min_cost_id} at "
-                    f"step {abs(timestep)-2} "
-                    f"with cost {cost[0]}: {self.solution}"
-                )
+        # Implicitly loops according to the length of the number of target costs
+        # as the length of the target cost and the length of number of min_ids 
+        # are the same.
+        # self.target_costs is probably not iterable.
+        # initialize a variable that holds solution for every problem
+        for target_cost in self.target_costs:
+            raw_cost, min_cost_id = self.cost_in.recv()
+            if raw_cost != 0:
+                timestep = self.timestep_in.recv()[0]
+                # The following casts cost as a signed 24-bit value (8 = 32 - 24)
+                cost = (np.array([raw_cost]).astype(np.int32) << 8) >> 8
+                raw_solution = self.read_solution.recv()
+                # Use this somehoww
+                #solver_process.finders[int(idx)].variables_assignment.get()
+                raw_solution &= 0x1F  # AND with 0x1F (=0b11111) retains 5 LSBs
+                # The binary solution was attained 2 steps ago. Shift down by 4.
+                self.solution[:] = raw_solution.astype(np.int8) >> 4
+                self.solution_step = abs(timestep)
+                self.min_cost[:] = np.asarray([cost[0], min_cost_id])
+                if cost[0] < 0:
+                    print(
+                        f"Host: better solution found by network {min_cost_id} at "
+                        f"step {abs(timestep)-2} "
+                        f"with cost {cost[0]}: {self.solution}"
+                    )
 
-            if (
-                self.min_cost[0] is not None
-                and self.min_cost[0] <= self.target_cost
-            ):
-                print(f"Host: network reached target cost {self.target_cost}.")
-            if timestep > 0:
-                self.stop = True
+                if (
+                    self.min_cost[0] is not None
+                    and self.min_cost[0] <= target_cost
+                ):
+                    print(f"Host: network reached target cost {target_cost}.")
+                if timestep > 0:
+                    self.stop = True

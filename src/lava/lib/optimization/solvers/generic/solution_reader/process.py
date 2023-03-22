@@ -11,21 +11,23 @@ from lava.magma.core.process.variable import Var
 class SolutionReader(AbstractProcess):
     def __init__(
         self,
-        var_shape,
-        target_cost,
-        min_cost: int = 2**24,
+        target_costs,
+        problem_index_map,
         num_in_ports: int = 1,
+        var_shape=None,
         name: ty.Optional[str] = None,
         log_config: ty.Optional[LogConfig] = None,
     ):
         super().__init__(
-            var_shape=var_shape,
-            target_cost=target_cost,
+            target_costs=target_costs,
+            problem_index_map=problem_index_map,
             num_in_ports=num_in_ports,
+            var_shape=var_shape,
             name=name,
             log_config=log_config,
         )
-
+        # hard-coded very high cost
+        min_cost = 2**24
         self.solution = Var(shape=var_shape, init=-1)
         self.solution_step = Var(shape=(1,), init=-1)
         self.min_cost = Var(shape=(2,), init=min_cost)
